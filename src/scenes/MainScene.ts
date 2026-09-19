@@ -15,7 +15,7 @@ import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
 import { startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
 import { OpeningAnimation, type OpeningAnimationStyle } from "../presentation/OpeningAnimation"
 import { BOARD_LAYOUT, boardSlotCenter } from "../presentation/board/boardLayout"
-import { animateCorrectTileMark, markCorrectTile } from "../presentation/board/correctTileMarks"
+import { createCorrectTileFeedbackForMode, type CorrectTileFeedback, type CorrectTileFeedbackMode } from "../presentation/board/correctTileMarks"
 import { createTileBackground, createTileLetter, GAME_PRESENTATION, REVIEW_PRESENTATION, tileColor } from "../presentation/board/tileVisuals"
 import { celebrateCompletedPuzzle, celebrateCompletedRow } from "../presentation/celebrations"
 import { addWerdolHeader } from "../presentation/WerdolHeader"
@@ -75,11 +75,13 @@ const devSessionState: {
   showExactMinimum: boolean
   interactionMode: InteractionMode
   magnificationMode: MagnificationMode
+  correctTileFeedbackMode: CorrectTileFeedbackMode
 } = {
   activeTab: "setup",
   showExactMinimum: false,
   interactionMode: "swap",
   magnificationMode: "cards",
+  correctTileFeedbackMode: "shape",
 }
 
 export class MainScene extends Phaser.Scene {
@@ -128,8 +130,11 @@ export class MainScene extends Phaser.Scene {
   private puzzleEndedTracked = false
   private devPanel!: Phaser.GameObjects.Container
   private devTabContainers!: Record<DevTab, Phaser.GameObjects.Container>
+  private correctTileFeedbackMode: CorrectTileFeedbackMode = devSessionState.correctTileFeedbackMode
+  private correctTileFeedback: CorrectTileFeedback = createCorrectTileFeedbackForMode(this.correctTileFeedbackMode)
   private devTabButtons!: Record<DevTab, Phaser.GameObjects.Rectangle>
   private devTabLabels!: Record<DevTab, Phaser.GameObjects.Text>
+  private feedbackModeButtons: Array<{ id: CorrectTileFeedbackMode; button: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }> = []
   private devOverlay!: Phaser.GameObjects.Rectangle
   private devPanelBackground!: Phaser.GameObjects.Rectangle
   private devCloseButton!: Phaser.GameObjects.Text
@@ -269,7 +274,7 @@ export class MainScene extends Phaser.Scene {
     if (this.openingAnimationActive) {
       this.preparedBoard = createScrambledBoard(this.puzzle, this.letterRandom)
       this.markOpeningSeen()
-      this.openingAnimation = new OpeningAnimation(this, this.preparedBoard, () => this.finishOpeningAnimation(), { style: openingStyle ?? "sequential" })
+      this.openingAnimation = new OpeningAnimation(this, this.preparedBoard, () => this.finishOpeningAnimation(), { style: openingStyle ?? "sequential", feedbackMode: this.correctTileFeedbackMode })
       this.input.once("pointerdown", this.skipOpeningAnimation, this)
     }
     addWerdolHeader(this)
@@ -541,6 +546,49 @@ export class MainScene extends Phaser.Scene {
     const reviewLabel = this.add.text(267, y + 59, "REVIEW", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
     reviewButton.on("pointerdown", () => this.enterReviewMode())
     this.devTabContainers.solve.add([nextButton, nextIcon, resetButton, resetLabel, reviewButton, reviewLabel])
+    this.buildFeedbackModeTools()
+  }
+
+  private buildFeedbackModeTools(): void {
+    const modes: Array<{ id: CorrectTileFeedbackMode; label: string }> = [
+      { id: "shape", label: "SHAPE" },
+      { id: "notch", label: "NOTCH" },
+      { id: "stamp", label: "STAMP" },
+      { id: "pulse", label: "PULSE" },
+    ]
+    const heading = this.add.text(20, 225, "Correct-tile feedback", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", resolution: RENDER_SCALE })
+    const buttons = modes.map((mode, index) => {
+      const button = this.add.rectangle(20 + index * 82, 260, 74, 30, MainScene.INACTIVE_BUTTON_COLOR)
+        .setOrigin(0, 0)
+        .setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR)
+        .setInteractive({ useHandCursor: true })
+      const label = this.add.text(button.x + 37, 275, mode.label, { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "9px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
+      button.on("pointerdown", () => this.setCorrectTileFeedbackMode(mode.id))
+      this.devTabContainers.solve.add([button, label])
+      return { id: mode.id, button, label }
+    })
+    this.feedbackModeButtons = buttons
+    this.devTabContainers.solve.add(heading)
+    this.updateFeedbackModeButtons(buttons)
+  }
+
+  private updateFeedbackModeButtons(buttons: Array<{ id: CorrectTileFeedbackMode; button: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }>): void {
+    buttons.forEach(({ id, button, label }) => {
+      const selected = id === this.correctTileFeedbackMode
+      button.setFillStyle(selected ? MainScene.ACTIVE_BUTTON_COLOR : MainScene.INACTIVE_BUTTON_COLOR)
+      label.setColor(selected ? COLORS.primaryButtonText : COLORS.ink)
+    })
+  }
+
+  private setCorrectTileFeedbackMode(mode: CorrectTileFeedbackMode): void {
+    if (mode === this.correctTileFeedbackMode) return
+    this.tileBackgrounds.forEach((tile) => this.correctTileFeedback.reset(tile))
+    this.correctTileFeedbackMode = mode
+    devSessionState.correctTileFeedbackMode = mode
+    this.correctTileFeedback = createCorrectTileFeedbackForMode(mode)
+    this.updateRowFeedback()
+    this.updateFeedbackModeButtons(this.feedbackModeButtons)
+    this.setDevTab("solve")
   }
 
   private performNextAlgorithmicSwap(): void {
@@ -1284,7 +1332,7 @@ export class MainScene extends Phaser.Scene {
       const rowIndex = Math.floor(slotIndex / 5)
       const correct = rowIndex === this.puzzle.rows.length || this.isLetterCorrectAtSlot(slotIndex)
       this.tileBackgrounds[slotIndex]?.setSize(CELL_SIZE, CELL_SIZE)
-      animateCorrectTileMark(this, this.tileBackgrounds[slotIndex], correct)
+      this.correctTileFeedback.animate(this, this.tileBackgrounds[slotIndex], correct ? "correct" : "incorrect")
     })
   }
 
@@ -1618,7 +1666,7 @@ export class MainScene extends Phaser.Scene {
         const background = createTileBackground(this, center, result, REVIEW_PRESENTATION)
         this.reviewBoard?.add(background)
         const text = createTileLetter(this, center, tile.letter, REVIEW_PRESENTATION)
-        markCorrectTile(background, tile.letter === row.intendedGuess[columnIndex])
+        this.correctTileFeedback.mark(background, tile.letter === row.intendedGuess[columnIndex] ? "correct" : "incorrect")
         this.reviewBoard?.add(text)
         this.reviewTileTexts[slotIndex] = text
       })

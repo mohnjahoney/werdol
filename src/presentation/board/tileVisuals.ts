@@ -2,7 +2,7 @@ import Phaser from "phaser"
 import type { LetterResult } from "../../core/evaluateGuess"
 import { RENDER_SCALE } from "../../style/rendering"
 import { BOARD_LAYOUT, type BoardPoint } from "./boardLayout"
-import { animateCorrectTileMark, markCorrectTile } from "./correctTileMarks"
+import type { CorrectTileFeedback, CorrectTileFeedbackState } from "./correctTileMarks"
 
 export type PresentationMode = "splash" | "game" | "review"
 
@@ -94,13 +94,15 @@ export function applyTileEvaluation(
   background: Phaser.GameObjects.Rectangle | undefined,
   result: LetterResult,
   presentation: BoardPresentation,
+  feedback: CorrectTileFeedback,
   animateMark = false,
 ): void {
   if (!background || !presentation.showEvaluation) return
   const color = tileColor(result)
   background.setFillStyle(color).setStrokeStyle(1.5, color)
-  if (animateMark) animateCorrectTileMark(scene, background, result === "correct")
-  else markCorrectTile(background, result === "correct")
+  const state: CorrectTileFeedbackState = result === "correct" ? "correct" : "incorrect"
+  if (animateMark) feedback.animate(scene, background, state)
+  else feedback.mark(background, state)
 }
 
 export function tileColor(result: LetterResult): number {

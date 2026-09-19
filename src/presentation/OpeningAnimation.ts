@@ -2,7 +2,7 @@ import Phaser from "phaser"
 import type { ScrambledBoard } from "../core/board"
 import type { LetterResult } from "../core/evaluateGuess"
 import { boardSlotCenter } from "./board/boardLayout"
-import { animateCorrectTileMark, stopCorrectTileMarkAnimation } from "./board/correctTileMarks"
+import { createCorrectTileFeedbackForMode, type CorrectTileFeedback, type CorrectTileFeedbackMode } from "./board/correctTileMarks"
 import { applyTileEvaluation, createTileAsterisk, createTileBackground, createTileLetter, SPLASH_PRESENTATION, type BoardPresentation } from "./board/tileVisuals"
 import { addWerdolHeader } from "./WerdolHeader"
 
@@ -31,6 +31,7 @@ export interface OpeningAnimationOptions {
   showAsterisk?: boolean
   showMarkup?: boolean
   style?: OpeningAnimationStyle
+  feedbackMode?: CorrectTileFeedbackMode
 }
 
 export type OpeningAnimationStyle = "sequential" | "simultaneous"
@@ -42,6 +43,7 @@ export class OpeningAnimation {
   private readonly tiles: OpeningTile[] = []
   private readonly timers: Phaser.Time.TimerEvent[] = []
   private readonly presentation: BoardPresentation
+  private readonly feedback: CorrectTileFeedback
   private occupancy: number[]
   private finished = false
 
@@ -56,6 +58,7 @@ export class OpeningAnimation {
       showAsterisks: this.options.showAsterisk !== false,
       showEvaluation: this.options.showMarkup !== false,
     }
+    this.feedback = createCorrectTileFeedbackForMode(this.options.feedbackMode ?? "shape")
     this.occupancy = [...scrambledBoard.initialOccupancy]
     this.layer = scene.add.container(0, 0).setDepth(10_000)
     this.letterLayer = scene.add.container(0, 0).setDepth(100)
@@ -69,7 +72,7 @@ export class OpeningAnimation {
 
   destroy(): void {
     this.timers.forEach((timer) => timer.remove(false))
-    this.tiles.forEach((tile) => stopCorrectTileMarkAnimation(tile.background))
+    this.tiles.forEach((tile) => this.feedback.stop(tile.background))
     this.layer.destroy(true)
   }
 
@@ -159,7 +162,7 @@ export class OpeningAnimation {
   }
 
   private applyEvaluation(tile: OpeningTile, result: LetterResult): void {
-    applyTileEvaluation(this.scene, tile.background, result, this.presentation, true)
+    applyTileEvaluation(this.scene, tile.background, result, this.presentation, this.feedback, true)
   }
 
   private shuffleUnknown(): void {
@@ -204,7 +207,7 @@ export class OpeningAnimation {
       const letter = this.scrambledBoard.letters[letterId]
       const boardTile = this.scrambledBoard.boardTiles[slotIndex]
       if (!tile || !letter || !boardTile) return
-      animateCorrectTileMark(this.scene, tile.background, letter.character === boardTile.targetCharacter)
+      this.feedback.animate(this.scene, tile.background, letter.character === boardTile.targetCharacter ? "correct" : "incorrect")
     })
   }
 
