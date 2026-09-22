@@ -315,15 +315,15 @@ export class FocusCorrectTileFeedback implements CorrectTileFeedback {
     const existing = this.halos.get(tile)
     if (existing) return existing
     const parent = tile.parentContainer
-    const outer = tile.scene.add.rectangle(tile.x, tile.y, tile.width + 14, tile.height + 14)
+    const outer = tile.scene.add.rectangle(tile.x, tile.y, tile.width + 18, tile.height + 18)
       .setOrigin(0.5)
       .setFillStyle(0, 0)
-      .setStrokeStyle(3, 0xfffdf7, 0.12)
+      .setStrokeStyle(5, 0x5c554b, 0.28)
       .setDepth(tile.depth + 1)
-    const inner = tile.scene.add.rectangle(tile.x, tile.y, tile.width + 6, tile.height + 6)
+    const inner = tile.scene.add.rectangle(tile.x, tile.y, tile.width + 10, tile.height + 10)
       .setOrigin(0.5)
       .setFillStyle(0, 0)
-      .setStrokeStyle(2, 0xfffdf7, 0.22)
+      .setStrokeStyle(3, 0xfaf6e9, 0.48)
       .setDepth(tile.depth + 1)
     if (parent) parent.add([outer, inner])
     const result = [outer, inner]
