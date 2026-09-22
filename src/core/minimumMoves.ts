@@ -60,7 +60,11 @@ export function findNextSwap(puzzle: WerdolPuzzle, tiles: readonly LetterTile[])
   return { firstSlot, secondSlot, improvement: 1 }
 }
 
-export function countAlgorithmicMoves(puzzle: WerdolPuzzle, startingTiles: readonly LetterTile[]): number {
+/**
+ * Legacy greedy estimate. Kept as a diagnostic/reference solver; production
+ * move goals should use countOptimalMoves instead.
+ */
+export function countGreedyMoves(puzzle: WerdolPuzzle, startingTiles: readonly LetterTile[]): number {
   const tiles = startingTiles.map((tile) => ({ ...tile }))
   let moves = 0
   while (true) {
@@ -141,7 +145,7 @@ export function countOptimalMoves(puzzle: WerdolPuzzle, startingTiles: readonly 
 
 export function benchmarkSolvers(puzzle: WerdolPuzzle, startingTiles: readonly LetterTile[]): SolverBenchmark {
   const greedyStart = performance.now()
-  const greedyMoves = countAlgorithmicMoves(puzzle, startingTiles)
+  const greedyMoves = countGreedyMoves(puzzle, startingTiles)
   const greedyMilliseconds = performance.now() - greedyStart
   const optimalStart = performance.now()
   const optimalMoves = countOptimalMoves(puzzle, startingTiles)

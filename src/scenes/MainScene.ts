@@ -3,7 +3,7 @@ import { createScrambledBoard, type Letter, type LetterTile, type ScrambledBoard
 import { evaluateGuess } from "../core/evaluateGuess"
 import { createWerdolPuzzle, type WerdolPuzzle, type PuzzleSetup } from "../core/puzzle"
 import { countBoardTiles } from "../core/validation"
-import { benchmarkSolvers, countAlgorithmicMoves, countOptimalMoves, findNextSwap, type SolverBenchmark } from "../core/minimumMoves"
+import { benchmarkSolvers, countOptimalMoves, findNextSwap, type SolverBenchmark } from "../core/minimumMoves"
 import { countCorrectTiles, createReferencePath, type ReviewState } from "../core/reviewPath"
 import { countCorrectOccupancy, isLetterCorrectAtSlot, swapOccupancy, tilesFromOccupancy } from "../core/boardState"
 import { createTimelineRects, DEFAULT_MAGNIFICATION_CONFIG, layoutTimelineRects, timelineScaleForStateCount, timelineWidthForStateCount, type MagnificationMode, type TimelineRect } from "../core/reviewTimeline"
@@ -72,13 +72,11 @@ const CHALLENGE_INITIAL_LETTERS = "arehegwsleedtbmueepy"
 
 const devSessionState: {
   activeTab: DevTab
-  showExactMinimum: boolean
   interactionMode: InteractionMode
   magnificationMode: MagnificationMode
   correctTileFeedbackMode: CorrectTileFeedbackMode
 } = {
   activeTab: "setup",
-  showExactMinimum: false,
   interactionMode: "swap",
   magnificationMode: "cards",
   correctTileFeedbackMode: "shape",
@@ -99,8 +97,6 @@ export class MainScene extends Phaser.Scene {
   private movesTaken = 0
   private minimumMoves = 0
   private challengeBenchmark?: SolverBenchmark
-  private exactMinimumMoves?: number
-  private showExactMinimum = false
   private puzzleCreationFailed = false
   private preparedBoard?: ScrambledBoard
   private devPanelReady = false
@@ -110,7 +106,6 @@ export class MainScene extends Phaser.Scene {
   private deferredUiObjects: Phaser.GameObjects.GameObject[] = []
   private moveBarBricks: Phaser.GameObjects.Rectangle[] = []
   private moveBarMinimumMarker!: Phaser.GameObjects.Rectangle
-  private moveBarOptimalMarker?: Phaser.GameObjects.Rectangle
   private outOfMovesOverlay?: Phaser.GameObjects.Container
   private finishOverlay?: Phaser.GameObjects.Container
   private howToPlayOverlay!: Phaser.GameObjects.Container
@@ -142,7 +137,6 @@ export class MainScene extends Phaser.Scene {
   private devToggle!: Phaser.GameObjects.Rectangle
   private devGreenToggle!: Phaser.GameObjects.Rectangle
   private devChallengeToggle!: Phaser.GameObjects.Rectangle
-  private devExactToggle!: Phaser.GameObjects.Rectangle
   private devGreenCountText!: Phaser.GameObjects.Text
   private devYellowCountText!: Phaser.GameObjects.Text
   private devCountButtons: Phaser.GameObjects.Text[] = []
@@ -208,8 +202,6 @@ export class MainScene extends Phaser.Scene {
     this.movesTaken = 0
     this.minimumMoves = 0
     this.challengeBenchmark = undefined
-    this.exactMinimumMoves = undefined
-    this.showExactMinimum = devSessionState.showExactMinimum
     this.playerPath = []
     this.reviewOverlay = undefined
     this.outOfMovesOverlay = undefined
@@ -288,9 +280,6 @@ export class MainScene extends Phaser.Scene {
       this.add.text(31, 265, "Try reducing the constraints in DEV.", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "16px", wordWrap: { width: 360 }, resolution: RENDER_SCALE })
     } else {
       this.buildBoard()
-      if (this.showExactMinimum) {
-        this.exactMinimumMoves = countOptimalMoves(this.puzzle, tilesFromOccupancy(this.occupancy, this.letters))
-      }
     }
     trackWerdolEvent("werdol:puzzle_started", {
       puzzleId: this.puzzleId,
@@ -302,7 +291,6 @@ export class MainScene extends Phaser.Scene {
       wordsConsidered: this.puzzle.wordsConsidered ?? 0,
     })
     this.buildMoveInfo()
-    this.updateExactMinimumMarker()
     this.buildNewPuzzleButton()
     this.buildHowToPlay()
     this.buildDevPanel()
@@ -421,10 +409,9 @@ export class MainScene extends Phaser.Scene {
     })
     this.moveBarMinimumMarker = this.add.rectangle(goalPosition, barY, 2, 22, MainScene.BUTTON_STROKE_COLOR).setOrigin(0.5)
     objects.push(this.moveBarMinimumMarker)
-    this.moveBarOptimalMarker = undefined
     if (this.challengingTestPattern) {
       const benchmark = this.challengeBenchmark
-      objects.push(this.add.text(215, boxTop + 62, `APP ${benchmark?.greedyMoves ?? this.minimumMoves} MOVES · ${benchmark?.greedyMilliseconds.toFixed(2) ?? "—"} MS`, {
+      objects.push(this.add.text(215, boxTop + 62, `LEGACY GREEDY ${benchmark?.greedyMoves ?? "—"} MOVES · ${benchmark?.greedyMilliseconds.toFixed(2) ?? "—"} MS`, {
         color: COLORS.muted,
         fontFamily: "Arial, sans-serif",
         fontSize: "9px",
@@ -432,7 +419,7 @@ export class MainScene extends Phaser.Scene {
         letterSpacing: 0.4,
         resolution: RENDER_SCALE,
       }).setOrigin(0.5, 0.5))
-      objects.push(this.add.text(215, boxTop + 73, `SEARCH ${benchmark?.optimalMoves ?? "—"} MOVES · ${benchmark?.optimalMilliseconds.toFixed(2) ?? "—"} MS`, {
+      objects.push(this.add.text(215, boxTop + 73, `OPTIMAL ${benchmark?.optimalMoves ?? this.minimumMoves} MOVES · ${benchmark?.optimalMilliseconds.toFixed(2) ?? "—"} MS`, {
         color: COLORS.muted,
         fontFamily: "Arial, sans-serif",
         fontSize: "9px",
@@ -443,21 +430,6 @@ export class MainScene extends Phaser.Scene {
     }
     this.updateMoveInfo()
     this.queueUiEntrance(objects)
-  }
-
-  private updateExactMinimumMarker(): void {
-    this.moveBarOptimalMarker?.destroy()
-    this.moveBarOptimalMarker = undefined
-    if (!this.showExactMinimum || this.exactMinimumMoves === undefined || !this.moveBarMinimumMarker) return
-
-    const boxTop = 535
-    const barLeft = 82
-    const barWidth = 266
-    const totalBricks = this.minimumMoves + EXTRA_MOVES
-    const brickGap = 3
-    const brickWidth = (barWidth - brickGap * (totalBricks - 1)) / totalBricks
-    const markerX = barLeft + this.exactMinimumMoves * (brickWidth + brickGap) - (this.exactMinimumMoves > 0 ? brickGap / 2 : 0)
-    this.moveBarOptimalMarker = this.add.rectangle(markerX, boxTop + 47, 3, 28, COLORS.reviewHover).setOrigin(0.5)
   }
 
   private animateUiEntrance(objects: Phaser.GameObjects.GameObject[]): void {
@@ -797,20 +769,6 @@ export class MainScene extends Phaser.Scene {
       this.challengingTestPattern = !this.challengingTestPattern
       this.updateDevToggle()
     })
-    const exactLabel = this.add.text(20, 220, "Show exact minimum", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "14px", resolution: RENDER_SCALE })
-    this.devExactToggle = this.add.rectangle(330, 225, 30, 18).setOrigin(0.5).setInteractive({ useHandCursor: true })
-    this.devExactToggle.on("pointerdown", () => {
-      this.showExactMinimum = !this.showExactMinimum
-      devSessionState.showExactMinimum = this.showExactMinimum
-      if (this.showExactMinimum) {
-        const currentTiles = tilesFromOccupancy(this.occupancy, this.letters)
-        this.exactMinimumMoves = countOptimalMoves(this.puzzle, currentTiles)
-      } else {
-        this.exactMinimumMoves = undefined
-      }
-      this.updateExactMinimumMarker()
-      this.updateDevToggle()
-    })
     const magnificationLabel = this.add.text(20, 105, "Timeline magnification", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", resolution: RENDER_SCALE })
     this.centerMagnificationButton = this.add.rectangle(65, 145, 112, 30, this.magnificationMode === "center" ? MainScene.ACTIVE_BUTTON_COLOR : MainScene.INACTIVE_BUTTON_COLOR).setOrigin(0.5).setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
     this.continuousMagnificationButton = this.add.rectangle(190, 145, 112, 30, this.magnificationMode === "continuous" ? MainScene.ACTIVE_BUTTON_COLOR : MainScene.INACTIVE_BUTTON_COLOR).setOrigin(0.5).setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
@@ -826,7 +784,6 @@ export class MainScene extends Phaser.Scene {
     this.replayOpeningButton.on("pointerdown", () => this.replayOpening())
     this.devPanel.add([heading, close])
     this.devTabContainers.setup.add([wordListLabel, toggleLabel, this.devToggle, greenLabel, this.devGreenToggle, greenCountLabel, yellowCountLabel, this.devGreenCountText, this.devYellowCountText, greenMinus, greenPlus, yellowMinus, yellowPlus, challengeLabel, this.devChallengeToggle, note])
-    this.devTabContainers.solve.add([exactLabel, this.devExactToggle])
     this.devTabContainers.review.add([magnificationLabel, this.centerMagnificationButton, this.continuousMagnificationButton, this.cardMagnificationButton, centerMagnificationText, continuousMagnificationText, cardMagnificationText, this.replayOpeningButton])
     this.devPanelBackground = panel
     this.devCloseButton = close
@@ -864,7 +821,6 @@ export class MainScene extends Phaser.Scene {
       this.devToggle.setInteractive({ useHandCursor: true })
       this.devGreenToggle.setInteractive({ useHandCursor: true })
       this.devChallengeToggle.setInteractive({ useHandCursor: true })
-      this.devExactToggle.setInteractive({ useHandCursor: true })
       Object.values(this.devTabButtons).forEach((button) => button.setInteractive({ useHandCursor: true }))
       this.normalModeButton.setInteractive({ useHandCursor: true })
       this.revealModeButton.setInteractive({ useHandCursor: true })
@@ -884,7 +840,6 @@ export class MainScene extends Phaser.Scene {
       this.devToggle.disableInteractive()
       this.devGreenToggle.disableInteractive()
       this.devChallengeToggle.disableInteractive()
-      this.devExactToggle.disableInteractive()
       Object.values(this.devTabButtons).forEach((button) => button.disableInteractive())
       this.normalModeButton.disableInteractive()
       this.revealModeButton.disableInteractive()
@@ -955,8 +910,6 @@ export class MainScene extends Phaser.Scene {
     this.devGreenToggle.setStrokeStyle(2, this.requireGreenTileInEachRow ? 0x4c7b43 : 0x756d5e)
     this.devChallengeToggle?.setFillStyle(this.challengingTestPattern ? 0x71845f : 0xc6bdae)
     this.devChallengeToggle?.setStrokeStyle(2, this.challengingTestPattern ? 0x4c7b43 : 0x756d5e)
-    this.devExactToggle?.setFillStyle(this.showExactMinimum ? 0x71845f : 0xc6bdae)
-    this.devExactToggle?.setStrokeStyle(2, this.showExactMinimum ? 0x4c7b43 : 0x756d5e)
   }
 
   private buildBoard(): void {
@@ -967,7 +920,7 @@ export class MainScene extends Phaser.Scene {
     this.initialOccupancy = [...board.initialOccupancy]
     this.initialTileIds = board.tiles.map((tile) => tile.id)
     this.challengeBenchmark = this.challengingTestPattern ? benchmarkSolvers(this.puzzle, board.tiles) : undefined
-    this.minimumMoves = this.challengeBenchmark?.greedyMoves ?? countAlgorithmicMoves(this.puzzle, board.tiles)
+    this.minimumMoves = this.challengeBenchmark?.optimalMoves ?? countOptimalMoves(this.puzzle, board.tiles)
     const rows = board.rows
     rows.forEach((row, rowIndex) => {
       const isFrozen = board.frozenRows.includes(rowIndex)
@@ -1015,7 +968,7 @@ export class MainScene extends Phaser.Scene {
     this.movesTaken = 0
     const resetTiles = tilesFromOccupancy(this.occupancy, this.letters)
     this.playerPath = [{ tiles: resetTiles, deltaCorrect: 0, correctCount: countCorrectTiles(this.puzzle, resetTiles) }]
-    this.minimumMoves = countAlgorithmicMoves(this.puzzle, resetTiles)
+    this.minimumMoves = countOptimalMoves(this.puzzle, resetTiles)
     this.selectedSlot = undefined
     this.updateMoveInfo()
     this.updateSelection()
@@ -1621,7 +1574,7 @@ export class MainScene extends Phaser.Scene {
       this.movesTaken = 0
     }
     this.applyTileState(selected.tiles)
-    this.minimumMoves = countAlgorithmicMoves(this.puzzle, selected.tiles)
+    this.minimumMoves = countOptimalMoves(this.puzzle, selected.tiles)
     this.updateMoveInfo()
     this.exitReviewMode(true)
   }

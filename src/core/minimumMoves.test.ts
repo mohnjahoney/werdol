@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { findNextSwap } from "./minimumMoves"
+import { countGreedyMoves, countOptimalMoves, findNextSwap } from "./minimumMoves"
 import type { WerdolPuzzle } from "./puzzle"
 import type { LetterTile } from "./board"
 
@@ -27,5 +27,19 @@ describe("findNextSwap", () => {
 
   it("returns no move for a solved board", () => {
     expect(findNextSwap(puzzle, tiles("SLATE"))).toBeUndefined()
+  })
+})
+
+describe("move counters", () => {
+  it("counts the exact minimum for a simple swap", () => {
+    expect(countOptimalMoves(puzzle, tiles("ELATS"))).toBe(1)
+  })
+
+  it("returns zero for an already solved board", () => {
+    expect(countOptimalMoves(puzzle, tiles("SLATE"))).toBe(0)
+  })
+
+  it("keeps the legacy greedy counter available for diagnostics", () => {
+    expect(countGreedyMoves(puzzle, tiles("ELATS"))).toBe(1)
   })
 })
