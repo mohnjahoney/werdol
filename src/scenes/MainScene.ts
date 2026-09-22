@@ -555,14 +555,16 @@ export class MainScene extends Phaser.Scene {
       { id: "notch", label: "NOTCH" },
       { id: "stamp", label: "STAMP" },
       { id: "pulse", label: "PULSE" },
+      { id: "tilt", label: "TILT" },
+      { id: "focus", label: "FOCUS" },
     ]
     const heading = this.add.text(20, 225, "Correct-tile feedback", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", resolution: RENDER_SCALE })
     const buttons = modes.map((mode, index) => {
-      const button = this.add.rectangle(20 + index * 82, 260, 74, 30, MainScene.INACTIVE_BUTTON_COLOR)
+      const button = this.add.rectangle(20 + index * 58, 260, 54, 30, MainScene.INACTIVE_BUTTON_COLOR)
         .setOrigin(0, 0)
         .setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR)
         .setInteractive({ useHandCursor: true })
-      const label = this.add.text(button.x + 37, 275, mode.label, { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "9px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
+      const label = this.add.text(button.x + 27, 275, mode.label, { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "8px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
       button.on("pointerdown", () => this.setCorrectTileFeedbackMode(mode.id))
       this.devTabContainers.solve.add([button, label])
       return { id: mode.id, button, label }

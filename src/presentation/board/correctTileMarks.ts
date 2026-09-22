@@ -1,7 +1,7 @@
 import Phaser from "phaser"
 
 export type CorrectTileFeedbackState = "correct" | "incorrect"
-export type CorrectTileFeedbackMode = "shape" | "notch" | "stamp" | "pulse"
+export type CorrectTileFeedbackMode = "shape" | "notch" | "stamp" | "pulse" | "tilt" | "focus"
 
 export interface CorrectTileFeedback {
   mark(tile: Phaser.GameObjects.Rectangle | undefined, state: CorrectTileFeedbackState): void
@@ -236,11 +236,109 @@ export class PulseCorrectTileFeedback implements CorrectTileFeedback {
   }
 }
 
+export class TiltCorrectTileFeedback implements CorrectTileFeedback {
+  private readonly tweens = new WeakMap<Phaser.GameObjects.Rectangle, Phaser.Tweens.Tween>()
+
+  mark(tile: Phaser.GameObjects.Rectangle | undefined, state: CorrectTileFeedbackState): void {
+    if (!tile) return
+    tile.setAngle(state === "incorrect" ? 45 : 0)
+  }
+
+  animate(scene: Phaser.Scene, tile: Phaser.GameObjects.Rectangle | undefined, state: CorrectTileFeedbackState): void {
+    if (!tile) return
+    this.stop(tile)
+    const tween = scene.tweens.add({
+      targets: tile,
+      angle: state === "incorrect" ? 45 : 0,
+      duration: 260,
+      ease: "Back.Out",
+      onComplete: () => this.tweens.delete(tile),
+    })
+    this.tweens.set(tile, tween)
+  }
+
+  stop(tile: Phaser.GameObjects.Rectangle | undefined): void {
+    if (!tile) return
+    this.tweens.get(tile)?.stop()
+    this.tweens.delete(tile)
+  }
+
+  reset(tile: Phaser.GameObjects.Rectangle | undefined): void {
+    if (!tile) return
+    this.stop(tile)
+    tile.setAngle(0)
+  }
+}
+
+export class FocusCorrectTileFeedback implements CorrectTileFeedback {
+  private readonly halos = new WeakMap<Phaser.GameObjects.Rectangle, Phaser.GameObjects.Rectangle[]>()
+  private readonly tweens = new WeakMap<Phaser.GameObjects.Rectangle, Phaser.Tweens.Tween>()
+
+  mark(tile: Phaser.GameObjects.Rectangle | undefined, state: CorrectTileFeedbackState): void {
+    if (!tile) return
+    const halos = this.halosFor(tile)
+    halos.forEach((halo) => halo.setAlpha(state === "incorrect" ? 1 : 0))
+  }
+
+  animate(scene: Phaser.Scene, tile: Phaser.GameObjects.Rectangle | undefined, state: CorrectTileFeedbackState): void {
+    if (!tile) return
+    this.stop(tile)
+    const halos = this.halosFor(tile)
+    if (state === "correct") {
+      const tween = scene.tweens.add({
+        targets: halos,
+        alpha: 0,
+        scale: 0.96,
+        duration: 360,
+        ease: "Sine.Out",
+        onComplete: () => this.tweens.delete(tile),
+      })
+      this.tweens.set(tile, tween)
+      return
+    }
+    halos.forEach((halo) => halo.setAlpha(1).setScale(1))
+  }
+
+  stop(tile: Phaser.GameObjects.Rectangle | undefined): void {
+    if (!tile) return
+    this.tweens.get(tile)?.stop()
+    this.tweens.delete(tile)
+  }
+
+  reset(tile: Phaser.GameObjects.Rectangle | undefined): void {
+    if (!tile) return
+    this.stop(tile)
+    this.halos.get(tile)?.forEach((halo) => halo.setAlpha(0).setScale(1))
+  }
+
+  private halosFor(tile: Phaser.GameObjects.Rectangle): Phaser.GameObjects.Rectangle[] {
+    const existing = this.halos.get(tile)
+    if (existing) return existing
+    const parent = tile.parentContainer
+    const outer = tile.scene.add.rectangle(tile.x, tile.y, tile.width + 14, tile.height + 14)
+      .setOrigin(0.5)
+      .setFillStyle(0, 0)
+      .setStrokeStyle(3, 0xfffdf7, 0.12)
+      .setDepth(tile.depth - 1)
+    const inner = tile.scene.add.rectangle(tile.x, tile.y, tile.width + 6, tile.height + 6)
+      .setOrigin(0.5)
+      .setFillStyle(0, 0)
+      .setStrokeStyle(2, 0xfffdf7, 0.22)
+      .setDepth(tile.depth - 1)
+    if (parent) parent.add([outer, inner])
+    const result = [outer, inner]
+    this.halos.set(tile, result)
+    return result
+  }
+}
+
 export function createCorrectTileFeedbackForMode(mode: CorrectTileFeedbackMode): CorrectTileFeedback {
   switch (mode) {
     case "notch": return new NotchCorrectTileFeedback()
     case "stamp": return new StampCorrectTileFeedback()
     case "pulse": return new PulseCorrectTileFeedback()
+    case "tilt": return new TiltCorrectTileFeedback()
+    case "focus": return new FocusCorrectTileFeedback()
     case "shape": return new ShapeCorrectTileFeedback()
   }
 }
