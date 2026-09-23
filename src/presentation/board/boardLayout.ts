@@ -2,7 +2,7 @@ export const BOARD_LAYOUT = {
   anchorX: 215,
   top: 135,
   tileSize: 56,
-  gap: 10,
+  gap: 14,
   rowStep: 73,
   completionMarkGap: 3,
   columns: 5,

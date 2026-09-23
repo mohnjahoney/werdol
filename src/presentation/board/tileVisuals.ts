@@ -2,7 +2,7 @@ import Phaser from "phaser"
 import type { LetterResult } from "../../core/evaluateGuess"
 import { RENDER_SCALE } from "../../style/rendering"
 import { BOARD_LAYOUT, type BoardPoint } from "./boardLayout"
-import type { CorrectTileFeedback, CorrectTileFeedbackState } from "./correctTileMarks"
+import { renderTileState, type LetterTileState, type TileStateRenderer } from "./tileStateRenderers"
 
 export type PresentationMode = "splash" | "game" | "review"
 
@@ -47,19 +47,6 @@ export const TILE_COLORS = {
   correct: 0x71845f,
 } as const
 
-export function createTileBackground(
-  scene: Phaser.Scene,
-  center: BoardPoint,
-  result: LetterResult | undefined,
-  presentation: BoardPresentation,
-): Phaser.GameObjects.Rectangle {
-  const color = result !== undefined && presentation.showEvaluation ? tileColor(result) : TILE_COLORS.empty
-  const background = scene.add.rectangle(center.x, center.y, BOARD_LAYOUT.tileSize, BOARD_LAYOUT.tileSize, color)
-    .setOrigin(0.5)
-    .setStrokeStyle(BOARD_LAYOUT.tileBorderWidth, color)
-  return background
-}
-
 export function createTileLetter(
   scene: Phaser.Scene,
   center: BoardPoint,
@@ -94,15 +81,15 @@ export function applyTileEvaluation(
   background: Phaser.GameObjects.Rectangle | undefined,
   result: LetterResult,
   presentation: BoardPresentation,
-  feedback: CorrectTileFeedback,
+  renderer: TileStateRenderer,
   animateMark = false,
 ): void {
   if (!background || !presentation.showEvaluation) return
   const color = tileColor(result)
   background.setFillStyle(color).setStrokeStyle(1.5, color)
-  const state: CorrectTileFeedbackState = result === "correct" ? "correct" : "incorrect"
-  if (animateMark) feedback.animate(scene, background, state)
-  else feedback.mark(background, state)
+  const state: LetterTileState = result === "correct" ? "matched" : "unmatched"
+  if (animateMark) renderer.animateTileState(scene, background, state)
+  else renderTileState(renderer, background, state)
 }
 
 export function tileColor(result: LetterResult): number {

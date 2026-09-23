@@ -1,11 +1,11 @@
 import Phaser from "phaser"
 import { createScrambledBoard, type Letter, type LetterTile, type ScrambledBoard } from "../core/board"
-import { evaluateGuess } from "../core/evaluateGuess"
+import { evaluateGuess, type LetterResult } from "../core/evaluateGuess"
 import { createWerdolPuzzle, type WerdolPuzzle, type PuzzleSetup } from "../core/puzzle"
 import { countBoardTiles } from "../core/validation"
 import { benchmarkSolvers, countOptimalMoves, findNextSwap, type SolverBenchmark } from "../core/minimumMoves"
 import { countCorrectTiles, createReferencePath, type ReviewState } from "../core/reviewPath"
-import { countCorrectOccupancy, isLetterCorrectAtSlot, swapOccupancy, tilesFromOccupancy } from "../core/boardState"
+import { isLetterCorrectAtSlot, tilesFromOccupancy } from "../core/boardState"
 import { createTimelineRects, DEFAULT_MAGNIFICATION_CONFIG, layoutTimelineRects, timelineScaleForStateCount, timelineWidthForStateCount, type MagnificationMode, type TimelineRect } from "../core/reviewTimeline"
 import { cardWidthForPath, createReviewCardRects, DEFAULT_REVIEW_CARD_CONFIG, focusCardIndexAtX, layoutReviewCards, type ReviewCardRect } from "../core/reviewCards"
 import { TimelineExplorer } from "../core/timelineExplorer"
@@ -13,12 +13,17 @@ import { ALLOWED_WORDS, ANSWER_WORDS } from "../core/words"
 import { createSeededRandom, nextPuzzleSeed, normalizeSeed, seedFromCurrentTime } from "../core/seededRandom"
 import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
 import { startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
-import { OpeningAnimation, type OpeningAnimationStyle } from "../presentation/OpeningAnimation"
+import { OpeningAnimation } from "../presentation/OpeningAnimation"
 import { BOARD_LAYOUT, boardSlotCenter } from "../presentation/board/boardLayout"
-import { createCorrectTileFeedbackForMode, type CorrectTileFeedback, type CorrectTileFeedbackMode } from "../presentation/board/correctTileMarks"
-import { createTileBackground, createTileLetter, GAME_PRESENTATION, REVIEW_PRESENTATION, tileColor } from "../presentation/board/tileVisuals"
+import { createTileRendererForMode, renderTileState, type TileRendererMode, type TileStateRenderer } from "../presentation/board/tileStateRenderers"
+import { createTileLetter, REVIEW_PRESENTATION, TILE_COLORS, tileColor } from "../presentation/board/tileVisuals"
 import { celebrateCompletedPuzzle, celebrateCompletedRow } from "../presentation/celebrations"
 import { addWerdolHeader } from "../presentation/WerdolHeader"
+import { createCircularArc, mirrorCircularArc, pointOnCircularArc } from "../presentation/circularArc"
+import { CircularArcVisual } from "../presentation/circularArcVisual"
+import { PuzzleWalkthrough } from "../presentation/PuzzleWalkthrough"
+import { LetterVisual } from "../presentation/LetterVisual"
+import { GameBoard, type GameBoardSwapEvent, type GameBoardTileVisual } from "../presentation/GameBoard"
 
 const COLORS = {
   ink: "#211f1a",
@@ -32,9 +37,23 @@ const COLORS = {
   buttonHoverText: "#f3eedf",
   reviewHover: 0xe5a5bc,
 } as const
-const CELL_SIZE = BOARD_LAYOUT.tileSize
-const SWAP_SELECTION_DELAY = 140
 const SWAP_ANIMATION_DURATION = 480
+const ARC_ANIMATION_DURATION = 120
+const TILE_SWAP_ANIMATION_DURATION = 400
+const SWAP_ARC_DEPTH = 5
+const BOARD_WARMUP_DURATION = 280
+const BOARD_WARMUP_STAGGER = 34
+const BOARD_WARMUP_DISTANCE = 12
+const BOARD_WARMUP_END_PAUSE = 220
+const EXPLANATION_SPEED = 2
+const explanationTime = (milliseconds: number): number => milliseconds / EXPLANATION_SPEED
+const EXPLANATION_ENTRY_INTERVAL = explanationTime(112)
+const EXPLANATION_FLIP_DURATION = explanationTime(145)
+const EXPLANATION_SHUFFLE_DURATION = explanationTime(1250)
+const EXPLANATION_SHUFFLE_STAGGER = explanationTime(18) * 4
+const EXPLANATION_POST_SHUFFLE_PAUSE = 500
+const EXPLANATION_LETTER_REVEAL_DELAY = 300
+const EXPLANATION_LETTER_REVEAL_DURATION = 300
 const EXTRA_MOVES = 3
 const UI_ENTRANCE_DURATION = 260
 const UI_ENTRANCE_OFFSET_Y = 12
@@ -47,10 +66,7 @@ const FINISH_PHRASES = {
   underGoal: ["Brilliant solve", "Exceptional work", "Beautiful work", "Masterfully solved", "Outstanding", "A superb solve", "That was excellent", "You found it"],
 } as const
 
-interface TileVisual {
-  tile: LetterTile
-  text: Phaser.GameObjects.Text
-}
+type TileVisual = GameBoardTileVisual
 
 interface SceneData extends PuzzleSetup {
   challengingTestPattern?: boolean
@@ -65,7 +81,6 @@ const ICON_KEYS = ["replace", "eye", "square", "layers-3", "rotate-ccw", "arrow-
 const OPENING_SEEN_KEY = "werdol-opening-seen"
 
 let pendingSceneData: SceneData | undefined
-let pendingOpeningStyle: OpeningAnimationStyle | undefined
 const CHALLENGE_TARGET = "xxxxx"
 const CHALLENGE_ROWS = ["eager", "hewed", "sleet", "bumpy"] as const
 const CHALLENGE_INITIAL_LETTERS = "arehegwsleedtbmueepy"
@@ -74,33 +89,35 @@ const devSessionState: {
   activeTab: DevTab
   interactionMode: InteractionMode
   magnificationMode: MagnificationMode
-  correctTileFeedbackMode: CorrectTileFeedbackMode
+  tileRendererMode: TileRendererMode
+  titleArcRadiusMultiplier: number
 } = {
   activeTab: "setup",
   interactionMode: "swap",
   magnificationMode: "cards",
-  correctTileFeedbackMode: "shape",
+  tileRendererMode: "halo",
+  titleArcRadiusMultiplier: 0.5,
 }
 
 export class MainScene extends Phaser.Scene {
   private puzzle!: WerdolPuzzle
-  private tileSlots: TileVisual[] = []
   private letters: Letter[] = []
-  private occupancy: number[] = []
   private initialOccupancy: number[] = []
   private initialTileIds: number[] = []
-  private slotBackgrounds: Phaser.GameObjects.Rectangle[] = []
-  private tileBackgrounds: Phaser.GameObjects.Rectangle[] = []
-  private selectedSlot: number | undefined
   private swapDirection = 1
   private swapAnimating = false
   private movesTaken = 0
   private minimumMoves = 0
+  private outOfMovesDismissed = false
   private challengeBenchmark?: SolverBenchmark
   private puzzleCreationFailed = false
   private preparedBoard?: ScrambledBoard
+  private gameBoard?: GameBoard
   private devPanelReady = false
   private openingAnimationActive = false
+  private openingExplanationPending = false
+  private boardWarmupPending = false
+  private openingShuffleOccupancy?: number[]
   private openingAnimation?: OpeningAnimation
   private openingSkipInProgress = false
   private deferredUiObjects: Phaser.GameObjects.GameObject[] = []
@@ -109,6 +126,7 @@ export class MainScene extends Phaser.Scene {
   private outOfMovesOverlay?: Phaser.GameObjects.Container
   private finishOverlay?: Phaser.GameObjects.Container
   private howToPlayOverlay!: Phaser.GameObjects.Container
+  private walkthrough?: PuzzleWalkthrough
   private requireTargetLetterInEachRow = false
   private requireGreenTileInEachRow = false
   private minGreenTiles = 4
@@ -124,15 +142,19 @@ export class MainScene extends Phaser.Scene {
   private puzzleStartedAt = 0
   private puzzleEndedTracked = false
   private devPanel!: Phaser.GameObjects.Container
+  private tileRendererPanel!: Phaser.GameObjects.Container
   private devTabContainers!: Record<DevTab, Phaser.GameObjects.Container>
-  private correctTileFeedbackMode: CorrectTileFeedbackMode = devSessionState.correctTileFeedbackMode
-  private correctTileFeedback: CorrectTileFeedback = createCorrectTileFeedbackForMode(this.correctTileFeedbackMode)
+  private tileRendererMode: TileRendererMode = devSessionState.tileRendererMode
+  private tileRenderer: TileStateRenderer = createTileRendererForMode(this.tileRendererMode)
   private devTabButtons!: Record<DevTab, Phaser.GameObjects.Rectangle>
   private devTabLabels!: Record<DevTab, Phaser.GameObjects.Text>
-  private feedbackModeButtons: Array<{ id: CorrectTileFeedbackMode; button: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }> = []
+  private feedbackModeButtons: Array<{ id: TileRendererMode; button: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }> = []
   private devOverlay!: Phaser.GameObjects.Rectangle
+  private tileRendererOverlay!: Phaser.GameObjects.Rectangle
   private devPanelBackground!: Phaser.GameObjects.Rectangle
+  private tileRendererPanelBackground!: Phaser.GameObjects.Rectangle
   private devCloseButton!: Phaser.GameObjects.Text
+  private tileRendererCloseButton!: Phaser.GameObjects.Text
   private replayOpeningButton!: Phaser.GameObjects.Text
   private devToggle!: Phaser.GameObjects.Rectangle
   private devGreenToggle!: Phaser.GameObjects.Rectangle
@@ -150,6 +172,7 @@ export class MainScene extends Phaser.Scene {
   private revealModeLabel!: Phaser.GameObjects.Container
   private easyModeLabel!: Phaser.GameObjects.Container
   private hardModeLabel!: Phaser.GameObjects.Container
+  private titleArcRadiusInput!: Phaser.GameObjects.DOMElement
   private modeLabelAnimating = false
   private playerPath: ReviewState[] = []
   private reviewOverlay?: Phaser.GameObjects.Container
@@ -160,6 +183,22 @@ export class MainScene extends Phaser.Scene {
   private reviewSelectedIndex = 0
   private reviewOriginalTiles: LetterTile[] = []
   private reviewTileTexts: Phaser.GameObjects.Text[] = []
+
+  private get tileSlots(): TileVisual[] {
+    return this.gameBoard?.tileSlots ?? []
+  }
+
+  private get occupancy(): readonly number[] {
+    return this.gameBoard?.currentOccupancy ?? []
+  }
+
+  private get tileBackgrounds(): Phaser.GameObjects.Rectangle[] {
+    return this.gameBoard?.tileBackgrounds ?? []
+  }
+
+  private get openingLetterVisuals(): Map<number, LetterVisual> {
+    return this.gameBoard?.openingLetterVisuals ?? new Map()
+  }
   private reviewSwapTween?: Phaser.Tweens.Tween
   private reviewSwapAnimating = false
   private reviewPlaying = false
@@ -186,26 +225,21 @@ export class MainScene extends Phaser.Scene {
 
   create(): void {
     const data = pendingSceneData ?? {}
-    const openingStyle = pendingOpeningStyle
     pendingSceneData = undefined
-    pendingOpeningStyle = undefined
     configureLogicalCamera(this)
-    this.tileSlots = []
     this.letters = []
-    this.occupancy = []
     this.initialOccupancy = []
     this.initialTileIds = []
-    this.slotBackgrounds = []
-    this.tileBackgrounds = []
-    this.selectedSlot = undefined
     this.swapAnimating = false
     this.movesTaken = 0
     this.minimumMoves = 0
+    this.outOfMovesDismissed = false
     this.challengeBenchmark = undefined
     this.playerPath = []
     this.reviewOverlay = undefined
     this.outOfMovesOverlay = undefined
     this.finishOverlay = undefined
+    this.walkthrough = undefined
     this.reviewBoard = undefined
     this.reviewTimeline = undefined
     this.reviewTileTexts = []
@@ -262,11 +296,14 @@ export class MainScene extends Phaser.Scene {
       this.puzzleCreationFailed = true
       this.puzzle = { target: "", rows: [] }
     }
-    this.openingAnimationActive = !this.puzzleCreationFailed && (openingStyle !== undefined || !this.hasSeenOpening())
+    this.openingAnimationActive = !this.puzzleCreationFailed && !this.hasSeenOpening()
+    this.openingExplanationPending = this.openingAnimationActive
+    this.boardWarmupPending = !this.puzzleCreationFailed && !this.openingAnimationActive
+    this.openingShuffleOccupancy = undefined
     if (this.openingAnimationActive) {
       this.preparedBoard = createScrambledBoard(this.puzzle, this.letterRandom)
       this.markOpeningSeen()
-      this.openingAnimation = new OpeningAnimation(this, this.preparedBoard, () => this.finishOpeningAnimation(), { style: openingStyle ?? "sequential", feedbackMode: this.correctTileFeedbackMode })
+      this.openingAnimation = new OpeningAnimation(this, () => this.finishOpeningAnimation(), { arcRadiusMultiplier: devSessionState.titleArcRadiusMultiplier })
       this.input.once("pointerdown", this.skipOpeningAnimation, this)
     }
     addWerdolHeader(this)
@@ -274,6 +311,10 @@ export class MainScene extends Phaser.Scene {
       .setStrokeStyle(1.5, COLORS.mutedNumeric)
       .setInteractive({ useHandCursor: true })
     devButton.on("pointerdown", () => this.setDevPanelVisible(!this.devPanel.visible))
+    const rendererButton = this.add.rectangle(390, 18, 12, 12, COLORS.button, 0.92)
+      .setStrokeStyle(1.5, COLORS.mutedNumeric)
+      .setInteractive({ useHandCursor: true })
+    rendererButton.on("pointerdown", () => this.setTileRendererPanelVisible(!this.tileRendererPanel.visible))
 
     if (this.puzzleCreationFailed) {
       this.add.text(31, 235, "NO PUZZLE FOUND", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", resolution: RENDER_SCALE })
@@ -294,6 +335,11 @@ export class MainScene extends Phaser.Scene {
     this.buildNewPuzzleButton()
     this.buildHowToPlay()
     this.buildDevPanel()
+    this.buildTileRendererPanel()
+    if (this.boardWarmupPending) {
+      this.boardWarmupPending = false
+      this.animateBoardWarmup()
+    }
   }
 
   private hasSeenOpening(): boolean {
@@ -338,7 +384,6 @@ export class MainScene extends Phaser.Scene {
       label.setColor(COLORS.primaryButtonText)
     })
     button.on("pointerdown", () => {
-      pendingOpeningStyle = "simultaneous"
       this.restartWithSetup(this.nextPuzzleSetup())
     })
     this.queueUiEntrance([button, label])
@@ -358,10 +403,18 @@ export class MainScene extends Phaser.Scene {
 
     this.howToPlayOverlay = this.add.container(0, 0).setDepth(30).setVisible(false)
     const backdrop = this.add.rectangle(0, 0, 430, 760, 0x211f1a, 0.18).setOrigin(0, 0).setInteractive()
-    const panel = this.add.rectangle(25, 170, 380, 400, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
+    const panel = this.add.rectangle(25, 150, 380, 550, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
     const title = this.add.text(50, 192, "HOW TO PLAY", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "13px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE })
     const instructions = this.add.text(50, 230, "WERDOL begins where Wordle ends...\n\nA Wordle game has been played and completed.\n\nHowever!..\n\nThe letters in the first four rows have been mixed up, but the colors stayed in place.\n\nTap two letters to swap. Tiles become square when they receive the right letter. Rebuild the four rows in as few moves as possible.\n\nGreen is correct, yellow is misplaced, and gray is absent.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", lineSpacing: 5, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
-    this.howToPlayOverlay.add([backdrop, panel, title, instructions])
+    const walkthroughButton = this.add.rectangle(50, 600, 330, 36, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const walkthroughLabel = this.add.text(215, 618, "SEE HOW IT WORKS", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "11px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setOrigin(0.5)
+    walkthroughButton.on("pointerover", () => walkthroughButton.setFillStyle(COLORS.primaryButtonHover))
+    walkthroughButton.on("pointerout", () => walkthroughButton.setFillStyle(COLORS.primaryButton))
+    walkthroughButton.on("pointerdown", () => {
+      this.howToPlayOverlay.setVisible(false)
+      this.startWalkthrough()
+    })
+    this.howToPlayOverlay.add([backdrop, panel, title, instructions, walkthroughButton, walkthroughLabel])
     infoButton.on("pointerdown", () => this.howToPlayOverlay.setVisible(!this.howToPlayOverlay.visible))
     backdrop.on("pointerdown", () => this.howToPlayOverlay.setVisible(false))
 
@@ -460,13 +513,220 @@ export class MainScene extends Phaser.Scene {
   }
 
   private finishOpeningAnimation(): void {
+    const wasSkipped = this.openingSkipInProgress
     this.input.off("pointerdown", this.skipOpeningAnimation, this)
     this.openingAnimationActive = false
     this.openingAnimation = undefined
     this.openingSkipInProgress = false
     const objects = this.deferredUiObjects
     this.deferredUiObjects = []
-    this.animateUiEntrance(objects)
+    if (this.openingExplanationPending && !wasSkipped) {
+      this.openingExplanationPending = false
+      this.playExplanatoryBoardAnimation(() => this.animateUiEntrance(objects))
+      return
+    }
+    if (wasSkipped) {
+      this.openingExplanationPending = false
+      this.commitOpeningShuffle()
+      this.revealBoardImmediately()
+      this.animateUiEntrance(objects)
+      return
+    }
+    const warmupDuration = this.animateBoardWarmup()
+    this.time.delayedCall(warmupDuration, () => this.animateUiEntrance(objects))
+  }
+
+  private playExplanatoryBoardAnimation(onComplete: () => void): void {
+    this.tileBackgrounds.forEach((background, slotIndex) => {
+      const center = this.slotCenter(slotIndex)
+      background.setPosition(center.x, center.y).setAlpha(1).setScale(1)
+      const letterId = this.initialOccupancy[slotIndex]
+      this.openingLetterVisuals.get(letterId ?? -1)?.setPosition(center.x, center.y).setAlpha(0).setScale(1).setMode("asterisk")
+    })
+
+    const start = explanationTime(520)
+    const rowCount = this.puzzle.rows.length + 1
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      for (let column = 0; column < 5; column += 1) {
+        const slotIndex = rowIndex * 5 + column
+        this.time.delayedCall(start + column * EXPLANATION_ENTRY_INTERVAL, () => {
+          const letterId = this.initialOccupancy[slotIndex]
+          const letterVisual = this.openingLetterVisuals.get(letterId ?? -1)
+          const background = this.tileBackgrounds[slotIndex]
+          if (!letterVisual || !background) return
+          letterVisual.setAlpha(1).setMode("asterisk")
+          this.tweens.add({
+            targets: [background, letterVisual.container],
+            scale: 1.08,
+            duration: explanationTime(90),
+            yoyo: true,
+            ease: "Sine.Out",
+          })
+        })
+      }
+
+      const submitAt = start + 5 * EXPLANATION_ENTRY_INTERVAL + explanationTime(180)
+      for (let column = 0; column < 5; column += 1) {
+        const result: LetterResult = rowIndex === this.puzzle.rows.length
+          ? "correct"
+          : this.puzzle.rows[rowIndex]?.pattern[column] ?? "absent"
+        this.time.delayedCall(submitAt + explanationTime(170) + column * explanationTime(88), () => {
+          this.flipExplanatoryTile(rowIndex * 5 + column, result)
+        })
+      }
+    }
+
+    const targetRevealAt = start + (rowCount - 1) * 0 + 5 * EXPLANATION_ENTRY_INTERVAL
+      + explanationTime(170) + 5 * explanationTime(88) + explanationTime(300)
+      this.time.delayedCall(targetRevealAt, () => {
+      for (let column = 0; column < 5; column += 1) {
+        const slotIndex = this.puzzle.rows.length * 5 + column
+        const letterId = this.initialOccupancy[slotIndex]
+        this.openingLetterVisuals.get(letterId ?? -1)?.setAlpha(1).setMode("character")
+      }
+    })
+    this.time.delayedCall(targetRevealAt + explanationTime(900), () => this.shuffleExplanatoryLetters(onComplete))
+  }
+
+  private flipExplanatoryTile(slotIndex: number, result: LetterResult): void {
+    const background = this.tileBackgrounds[slotIndex]
+    const letterId = this.initialOccupancy[slotIndex]
+    const letterVisual = this.openingLetterVisuals.get(letterId ?? -1)
+    if (!background || !letterVisual) return
+    this.tweens.add({
+      targets: [background, letterVisual.container],
+      scaleY: 0.04,
+      duration: EXPLANATION_FLIP_DURATION,
+      ease: "Sine.In",
+      onComplete: () => {
+        const color = tileColor(result)
+        background.setFillStyle(color).setStrokeStyle(1.5, color)
+        const tileState = this.isLetterCorrectAtOccupancy(this.initialOccupancy, slotIndex) ? "matched" : "unmatched"
+        renderTileState(this.tileRenderer, background, tileState)
+        this.tweens.add({
+          targets: [background, letterVisual.container],
+          scaleY: 1,
+          duration: EXPLANATION_FLIP_DURATION,
+          ease: "Back.Out",
+        })
+      },
+    })
+  }
+
+  private shuffleExplanatoryLetters(onComplete: () => void): void {
+    const movableLetterIds = this.initialOccupancy.filter((_letterId, slotIndex) => (
+      !this.isFrozenSlot(slotIndex)
+    ))
+    movableLetterIds.forEach((letterId, index) => {
+      const sourceSlot = this.initialOccupancy.findIndex((id) => id === letterId)
+      const destinationSlot = this.openingShuffleOccupancy?.findIndex((id) => id === letterId) ?? -1
+      const letterVisual = this.openingLetterVisuals.get(letterId)
+      if (sourceSlot < 0 || destinationSlot < 0 || !letterVisual) return
+      const destination = this.slotCenter(destinationSlot)
+      this.tweens.add({
+        targets: letterVisual.container,
+        x: destination.x,
+        y: destination.y,
+        duration: EXPLANATION_SHUFFLE_DURATION,
+        delay: (index % 5) * explanationTime(18),
+        ease: "Cubic.InOut",
+      })
+      letterVisual.animateToCharacter(this, EXPLANATION_LETTER_REVEAL_DELAY, EXPLANATION_LETTER_REVEAL_DURATION)
+    })
+    this.time.delayedCall(EXPLANATION_SHUFFLE_DURATION + EXPLANATION_SHUFFLE_STAGGER + EXPLANATION_POST_SHUFFLE_PAUSE, () => {
+      const shuffledOccupancy = [...(this.openingShuffleOccupancy ?? this.occupancy)]
+      this.commitOpeningShuffle(shuffledOccupancy)
+      onComplete()
+    })
+  }
+
+  private commitOpeningShuffle(nextOccupancy = this.openingShuffleOccupancy ?? this.occupancy): void {
+    this.releaseOpeningLetterVisuals(nextOccupancy)
+    this.setOccupancy(nextOccupancy)
+    const shuffledTiles = tilesFromOccupancy(this.occupancy, this.letters)
+    this.playerPath = [{ tiles: shuffledTiles, deltaCorrect: 0, correctCount: countCorrectTiles(this.puzzle, shuffledTiles) }]
+    this.movesTaken = 0
+    this.openingShuffleOccupancy = undefined
+  }
+
+  private releaseOpeningLetterVisuals(occupancy: readonly number[]): void {
+    const textByLetterId = new Map<number, Phaser.GameObjects.Text>()
+    this.openingLetterVisuals.forEach((visual, letterId) => textByLetterId.set(letterId, visual.releaseCharacter()))
+    this.tileSlots.forEach((visual, slotIndex) => {
+      const text = textByLetterId.get(occupancy[slotIndex] ?? -1)
+      if (text) visual.text = text
+    })
+    this.openingLetterVisuals.clear()
+  }
+
+  private setOccupancy(nextOccupancy: readonly number[], syncLetters = false): void {
+    this.gameBoard?.setOccupancy(nextOccupancy, syncLetters)
+    if (syncLetters) {
+      this.tileSlots.forEach((visual, slotIndex) => {
+        const letterId = this.occupancy[slotIndex]
+        visual.text.setText(this.letters[letterId ?? visual.tile.id]?.character ?? visual.text.text)
+      })
+    }
+    this.updateRowFeedback()
+  }
+
+  private isFrozenSlot(slotIndex: number): boolean {
+    return Math.floor(slotIndex / 5) === this.puzzle.rows.length
+  }
+
+  private prepareBoardForOpening(): void {
+    if (!this.openingAnimationActive && !this.boardWarmupPending) return
+    this.tileBackgrounds.forEach((background, slotIndex) => {
+      const center = this.slotCenter(slotIndex)
+      if (this.openingExplanationPending) {
+        background.setFillStyle(TILE_COLORS.empty).setStrokeStyle(BOARD_LAYOUT.tileBorderWidth, TILE_COLORS.empty)
+      }
+      background.setPosition(center.x, center.y).setAlpha(0)
+      if (this.openingExplanationPending) {
+        const letterId = this.initialOccupancy[slotIndex]
+        this.openingLetterVisuals.get(letterId ?? -1)?.setPosition(center.x, center.y).setAlpha(0).setMode("asterisk")
+      } else {
+        this.tileSlots[slotIndex]?.text.setPosition(center.x, center.y).setAlpha(0)
+      }
+    })
+  }
+
+  private animateBoardWarmup(): number {
+    this.tileBackgrounds.forEach((background, slotIndex) => {
+      const center = this.slotCenter(slotIndex)
+      const text = this.tileSlots[slotIndex]?.text
+      background.setPosition(center.x, center.y + BOARD_WARMUP_DISTANCE).setAlpha(0)
+      text?.setPosition(center.x, center.y + BOARD_WARMUP_DISTANCE).setAlpha(0)
+      this.tweens.add({
+        targets: background,
+        y: center.y,
+        alpha: 1,
+        duration: BOARD_WARMUP_DURATION,
+        delay: slotIndex * BOARD_WARMUP_STAGGER,
+        ease: "Cubic.Out",
+      })
+      if (text) {
+        this.tweens.add({
+          targets: text,
+          y: center.y,
+          alpha: 1,
+          duration: BOARD_WARMUP_DURATION,
+          delay: slotIndex * BOARD_WARMUP_STAGGER + 60,
+          ease: "Sine.Out",
+        })
+      }
+    })
+    return this.tileBackgrounds.length * BOARD_WARMUP_STAGGER + BOARD_WARMUP_DURATION + BOARD_WARMUP_END_PAUSE
+  }
+
+  private revealBoardImmediately(): void {
+    this.tileBackgrounds.forEach((background, slotIndex) => {
+      const center = this.slotCenter(slotIndex)
+      background.setPosition(center.x, center.y).setAlpha(1)
+      const text = this.tileSlots[slotIndex]?.text
+      const letterId = this.occupancy[slotIndex]
+      text?.setPosition(center.x, center.y).setText(this.letters[letterId ?? 0]?.character ?? "").setAlpha(1)
+    })
   }
 
   private skipOpeningAnimation(): void {
@@ -518,51 +778,77 @@ export class MainScene extends Phaser.Scene {
     const reviewLabel = this.add.text(267, y + 59, "REVIEW", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
     reviewButton.on("pointerdown", () => this.enterReviewMode())
     this.devTabContainers.solve.add([nextButton, nextIcon, resetButton, resetLabel, reviewButton, reviewLabel])
-    this.buildFeedbackModeTools()
   }
 
-  private buildFeedbackModeTools(): void {
-    const modes: Array<{ id: CorrectTileFeedbackMode; label: string }> = [
+  private buildTileRendererPanel(): void {
+    const modes: Array<{ id: TileRendererMode; label: string }> = [
       { id: "shape", label: "SHAPE" },
-      { id: "notch", label: "NOTCH" },
       { id: "stamp", label: "STAMP" },
       { id: "pulse", label: "PULSE" },
       { id: "tilt", label: "TILT" },
-      { id: "focus", label: "FOCUS" },
+      { id: "halo", label: "HALO" },
     ]
-    const heading = this.add.text(20, 225, "Correct-tile feedback", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", resolution: RENDER_SCALE })
+    this.tileRendererOverlay = this.add.rectangle(0, 0, 430, 760, 0x000000, 0).setOrigin(0, 0).setDepth(59).setInteractive()
+    this.tileRendererOverlay.on("pointerdown", () => this.setTileRendererPanelVisible(false))
+    this.tileRendererPanel = this.add.container(25, 250).setDepth(60)
+    const panel = this.add.rectangle(0, 0, 380, 190, 0xfaf6e9).setOrigin(0, 0).setStrokeStyle(2, MainScene.BUTTON_STROKE_COLOR).setInteractive()
+    const heading = this.add.text(20, 20, "TILE RENDERER", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE })
+    const close = this.add.text(355, 20, "CLOSE", { color: COLORS.muted, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(1, 0).setInteractive({ useHandCursor: true })
+    close.on("pointerdown", () => this.setTileRendererPanelVisible(false))
     const buttons = modes.map((mode, index) => {
-      const button = this.add.rectangle(20 + index * 58, 260, 54, 30, MainScene.INACTIVE_BUTTON_COLOR)
+      const column = index % 4
+      const row = Math.floor(index / 4)
+      const button = this.add.rectangle(20 + column * 58, 70 + row * 36, 54, 30, MainScene.INACTIVE_BUTTON_COLOR)
         .setOrigin(0, 0)
         .setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR)
         .setInteractive({ useHandCursor: true })
-      const label = this.add.text(button.x + 27, 275, mode.label, { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "8px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
-      button.on("pointerdown", () => this.setCorrectTileFeedbackMode(mode.id))
-      this.devTabContainers.solve.add([button, label])
+      const label = this.add.text(button.x + 27, button.y + 15, mode.label, { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "8px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
+      button.on("pointerdown", () => this.setTileRendererMode(mode.id))
+      this.tileRendererPanel.add([button, label])
       return { id: mode.id, button, label }
     })
     this.feedbackModeButtons = buttons
-    this.devTabContainers.solve.add(heading)
+    this.tileRendererPanel.add([panel, heading, close])
+    this.tileRendererPanel.sendToBack(panel)
+    this.tileRendererPanelBackground = panel
+    this.tileRendererCloseButton = close
     this.updateFeedbackModeButtons(buttons)
+    this.setTileRendererPanelVisible(false)
   }
 
-  private updateFeedbackModeButtons(buttons: Array<{ id: CorrectTileFeedbackMode; button: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }>): void {
+  private updateFeedbackModeButtons(buttons: Array<{ id: TileRendererMode; button: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }>): void {
     buttons.forEach(({ id, button, label }) => {
-      const selected = id === this.correctTileFeedbackMode
+      const selected = id === this.tileRendererMode
       button.setFillStyle(selected ? MainScene.ACTIVE_BUTTON_COLOR : MainScene.INACTIVE_BUTTON_COLOR)
       label.setColor(selected ? COLORS.primaryButtonText : COLORS.ink)
     })
   }
 
-  private setCorrectTileFeedbackMode(mode: CorrectTileFeedbackMode): void {
-    if (mode === this.correctTileFeedbackMode) return
-    this.tileBackgrounds.forEach((tile) => this.correctTileFeedback.reset(tile))
-    this.correctTileFeedbackMode = mode
-    devSessionState.correctTileFeedbackMode = mode
-    this.correctTileFeedback = createCorrectTileFeedbackForMode(mode)
+  private setTileRendererMode(mode: TileRendererMode): void {
+    if (mode === this.tileRendererMode) return
+    this.tileBackgrounds.forEach((tile) => this.tileRenderer.resetTileEffects(tile))
+    this.tileRenderer.destroy()
+    this.tileRendererMode = mode
+    devSessionState.tileRendererMode = mode
+    this.tileRenderer = createTileRendererForMode(mode)
     this.updateRowFeedback()
     this.updateFeedbackModeButtons(this.feedbackModeButtons)
-    this.setDevTab("solve")
+  }
+
+  private setTileRendererPanelVisible(visible: boolean): void {
+    this.tileRendererPanel.setVisible(visible)
+    this.tileRendererOverlay.setVisible(visible)
+    if (visible) {
+      this.tileRendererOverlay.setInteractive()
+      this.tileRendererPanelBackground.setInteractive()
+      this.tileRendererCloseButton.setInteractive({ useHandCursor: true })
+      this.feedbackModeButtons.forEach(({ button }) => button.setInteractive({ useHandCursor: true }))
+      return
+    }
+    this.tileRendererOverlay.disableInteractive()
+    this.tileRendererPanelBackground.disableInteractive()
+    this.tileRendererCloseButton.disableInteractive()
+    this.feedbackModeButtons.forEach(({ button }) => button.disableInteractive())
   }
 
   private performNextAlgorithmicSwap(): void {
@@ -574,7 +860,7 @@ export class MainScene extends Phaser.Scene {
     if (next === undefined) {
       return
     }
-    this.swapTiles(next.firstSlot, next.secondSlot)
+    this.gameBoard?.swapSlots(next.firstSlot, next.secondSlot)
   }
 
   private buildWordListModeTools(): void {
@@ -593,6 +879,7 @@ export class MainScene extends Phaser.Scene {
   private buildSeedTools(): void {
     const label = this.add.text(20, 420, "Seed", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", resolution: RENDER_SCALE })
     this.seedInput = this.add.dom(185, 420).createFromHTML(`<div style="display:flex; align-items:center; gap:8px;"><input type="text" value="${String(this.seed).padStart(6, "0")}" maxlength="6" inputmode="numeric" aria-label="Seed" style="width: 82px; height: 28px; box-sizing: border-box; text-align: center; font: bold 14px Arial; color: #211f1a; background: #f3eedf; border: 1px solid #756d5e;"><button type="button" aria-label="Apply seed" style="width: 78px; height: 28px; box-sizing: border-box; font: bold 9px Arial; color: #211f1a; background: #c6bdae; border: 1px solid #756d5e;">APPLY</button></div>`)
+    this.setSeedInputVisible(false)
     this.seedInput.node.querySelector("button")?.addEventListener("click", () => this.applySeed())
     this.seedInput.node.querySelector("input")?.addEventListener("keydown", (event) => {
       if (event.key === "Enter") this.applySeed()
@@ -607,6 +894,32 @@ export class MainScene extends Phaser.Scene {
       return
     }
     this.restartWithSetup({ ...this.currentPuzzleSetup(), seed: Number(input.value) })
+  }
+
+  private setSeedInputVisible(visible: boolean): void {
+    this.seedInput.setVisible(visible)
+    const node = this.seedInput.node as HTMLElement
+    node.style.display = visible ? "" : "none"
+  }
+
+  private setTitleArcRadiusInputVisible(visible: boolean): void {
+    if (!this.titleArcRadiusInput) return
+    this.titleArcRadiusInput.setVisible(visible)
+    const node = this.titleArcRadiusInput.node as HTMLElement
+    node.style.display = visible ? "" : "none"
+  }
+
+  private buildTitleArcRadiusTools(): void {
+    const label = this.add.text(20, 475, "Swap arc radius", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", resolution: RENDER_SCALE })
+    this.titleArcRadiusInput = this.add.dom(185, 500).createFromHTML(`<div style="display:flex; align-items:center; gap:8px;"><input type="range" min="0.5" max="2" step="0.5" value="${devSessionState.titleArcRadiusMultiplier}" aria-label="Swap arc radius" style="width:150px;"><output style="width:36px; font: bold 14px Arial; color:#211f1a; text-align:right;">${devSessionState.titleArcRadiusMultiplier}</output></div>`)
+    const input = this.titleArcRadiusInput.node.querySelector("input") as HTMLInputElement
+    const output = this.titleArcRadiusInput.node.querySelector("output") as HTMLOutputElement
+    input.addEventListener("input", () => {
+      devSessionState.titleArcRadiusMultiplier = Number(input.value)
+      output.value = input.value
+    })
+    this.titleArcRadiusInput.setVisible(false)
+    this.devTabContainers.setup.add([label, this.titleArcRadiusInput])
   }
 
   private setWordListMode(mode: WordListMode): void {
@@ -721,6 +1034,8 @@ export class MainScene extends Phaser.Scene {
       this.devTabButtons[id]?.setFillStyle(selected ? MainScene.ACTIVE_BUTTON_COLOR : MainScene.INACTIVE_BUTTON_COLOR)
       this.devTabLabels[id]?.setColor(selected ? COLORS.primaryButtonText : COLORS.ink)
     }
+    this.setSeedInputVisible(this.devPanel?.visible === true && tab === "setup")
+    this.setTitleArcRadiusInputVisible(this.devPanel?.visible === true && tab === "setup")
   }
 
   private buildDevPanel(): void {
@@ -738,6 +1053,7 @@ export class MainScene extends Phaser.Scene {
     const wordListLabel = this.add.text(20, 345, "Word list", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", resolution: RENDER_SCALE })
     this.buildWordListModeTools()
     this.buildSeedTools()
+    this.buildTitleArcRadiusTools()
     const toggleLabel = this.add.text(20, 68, "Each row shares a letter with target", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", wordWrap: { width: 285 }, resolution: RENDER_SCALE })
     this.devToggle = this.add.rectangle(330, 73, 30, 18).setOrigin(0.5).setInteractive({ useHandCursor: true })
     this.devToggle.on("pointerdown", () => {
@@ -814,6 +1130,8 @@ export class MainScene extends Phaser.Scene {
       return
     }
     this.devPanel.setVisible(visible)
+    this.setSeedInputVisible(visible && devSessionState.activeTab === "setup")
+    this.setTitleArcRadiusInputVisible(visible && devSessionState.activeTab === "setup")
     if (visible) {
       this.devOverlay.setInteractive()
       this.devPanelBackground.setInteractive()
@@ -916,42 +1234,37 @@ export class MainScene extends Phaser.Scene {
     const board = this.preparedBoard ?? createScrambledBoard(this.puzzle, this.letterRandom, this.challengingTestPattern ? CHALLENGE_INITIAL_LETTERS : undefined)
     this.preparedBoard = undefined
     this.letters = board.letters
-    this.occupancy = [...board.occupancy]
     this.initialOccupancy = [...board.initialOccupancy]
+    this.openingShuffleOccupancy = this.openingExplanationPending ? [...board.occupancy] : undefined
+    const startingOccupancy = this.openingExplanationPending ? [...board.initialOccupancy] : [...board.occupancy]
     this.initialTileIds = board.tiles.map((tile) => tile.id)
     this.challengeBenchmark = this.challengingTestPattern ? benchmarkSolvers(this.puzzle, board.tiles) : undefined
     this.minimumMoves = this.challengeBenchmark?.optimalMoves ?? countOptimalMoves(this.puzzle, board.tiles)
-    const rows = board.rows
-    rows.forEach((row, rowIndex) => {
-      const isFrozen = board.frozenRows.includes(rowIndex)
-      const rowTiles = board.tiles.slice(rowIndex * 5, (rowIndex + 1) * 5)
-      row.pattern.forEach((result, index) => {
-        const slotIndex = rowIndex * 5 + index
-        const center = this.slotCenter(slotIndex)
-        const background = createTileBackground(this, center, result, GAME_PRESENTATION).setDepth(0).setInteractive({ useHandCursor: true })
-        this.tileBackgrounds.push(background)
-        if (!isFrozen) background.on("pointerdown", () => this.selectTile(slotIndex))
-        else background.on("pointerdown", () => this.showAlreadyCompleteWord(rowIndex))
-        if (!isFrozen) {
-          this.slotBackgrounds.push(background)
-        }
-
-        const tile = rowTiles[index]
-        if (tile === undefined) return
-        const text = createTileLetter(this, center, tile.letter, GAME_PRESENTATION)
-        this.tileSlots.push({ tile, text })
-      })
+    this.gameBoard = new GameBoard(this, this.puzzle, board, this.tileRenderer, {
+      openingExplanationPending: this.openingExplanationPending,
+      onTilePointerDown: (slotIndex, rowIndex, frozen) => {
+        if (frozen) this.showAlreadyCompleteWord(rowIndex)
+        else this.gameBoard?.selectTile(slotIndex, this.interactionMode)
+      },
+    }, {
+      isInteractionBlocked: () => this.outOfMovesOverlay !== undefined || this.finishOverlay !== undefined || this.puzzleCreationFailed,
+      onAlreadyCompleteRow: (rowIndex) => this.showAlreadyCompleteWord(rowIndex),
+      onSwapCommitted: (event) => this.handleBoardSwapCommitted(event),
+      onSwapSettled: () => {
+        this.swapAnimating = false
+        this.updateRowFeedback()
+      },
     })
+    this.gameBoard.setOccupancy(startingOccupancy)
     const initialTiles = tilesFromOccupancy(this.occupancy, this.letters)
     this.playerPath = [{ tiles: initialTiles, deltaCorrect: 0, correctCount: countCorrectTiles(this.puzzle, initialTiles) }]
     this.updateRowFeedback()
+    this.prepareBoardForOpening()
   }
 
   private resetPuzzle(): void {
     if (this.swapAnimating || this.puzzleCreationFailed) return
-    const visualsById = new Map(this.tileSlots.map((visual) => [visual.tile.id, visual]))
-    const resetSlots = this.initialTileIds.map((id) => visualsById.get(id))
-    if (resetSlots.some((visual) => visual === undefined)) return
+    if (!this.gameBoard?.reorderByTileIds(this.initialTileIds)) return
     trackWerdolEvent("werdol:puzzle_reset", {
       puzzleId: this.puzzleId,
       puzzleNumber: this.puzzleNumber,
@@ -959,77 +1272,32 @@ export class MainScene extends Phaser.Scene {
     })
     this.puzzleEndedTracked = false
 
-    this.tileSlots = resetSlots as TileVisual[]
-    this.occupancy = [...this.initialOccupancy]
     this.tileSlots.forEach((visual, slotIndex) => {
       const center = this.slotCenter(slotIndex)
       visual.text.setPosition(center.x, center.y).setDepth(10)
     })
+    this.setOccupancy(this.initialOccupancy, true)
     this.movesTaken = 0
+    this.outOfMovesDismissed = false
     const resetTiles = tilesFromOccupancy(this.occupancy, this.letters)
     this.playerPath = [{ tiles: resetTiles, deltaCorrect: 0, correctCount: countCorrectTiles(this.puzzle, resetTiles) }]
     this.minimumMoves = countOptimalMoves(this.puzzle, resetTiles)
-    this.selectedSlot = undefined
+    this.gameBoard?.clearSelection()
     this.updateMoveInfo()
-    this.updateSelection()
     this.updateRowFeedback()
-  }
-
-  private selectTile(slotIndex: number): void {
-    if (this.swapAnimating || this.outOfMovesOverlay !== undefined || this.finishOverlay !== undefined) return
-    const rowIndex = Math.floor(slotIndex / 5)
-    if (this.isRowCorrect(rowIndex)) {
-      this.selectedSlot = undefined
-      this.updateSelection()
-      this.showAlreadyCompleteWord(rowIndex)
-      return
-    }
-    if (this.interactionMode === "reveal") {
-      this.revealTile(slotIndex)
-      return
-    }
-    if (this.selectedSlot === undefined) {
-      this.selectedSlot = slotIndex
-      this.updateSelection()
-      return
-    }
-    if (this.selectedSlot === slotIndex) {
-      this.selectedSlot = undefined
-      this.updateSelection()
-      return
-    }
-    const firstSlot = this.selectedSlot
-    this.selectedSlot = undefined
-    this.updateSelection()
-    const first = this.tileSlots[firstSlot]
-    const second = this.tileSlots[slotIndex]
-    if (first === undefined || second === undefined) return
-    this.swapAnimating = true
-    first.text.setAngle(30)
-    second.text.setAngle(30)
-    this.time.delayedCall(SWAP_SELECTION_DELAY, () => {
-      this.swapAnimating = false
-      this.swapTiles(firstSlot, slotIndex)
-    })
   }
 
   private showAlreadyCompleteWord(rowIndex: number): void {
     this.playCompletionCelebration([rowIndex], false)
   }
 
-  private swapTiles(firstSlot: number, secondSlot: number): void {
-    const first = this.tileSlots[firstSlot]
-    const second = this.tileSlots[secondSlot]
-    if (first === undefined || second === undefined) return
-    const previouslyCorrect = this.puzzle.rows.map((_row, rowIndex) => this.isRowCorrect(rowIndex))
-    const nextOccupancy = swapOccupancy(this.occupancy, firstSlot, secondSlot)
+  private handleBoardSwapCommitted(event: GameBoardSwapEvent): void {
+    const { firstSlot, secondSlot, previousOccupancy, nextOccupancy, previousCorrectCount, nextCorrectCount } = event
+    const previouslyCorrect = this.puzzle.rows.map((_row, rowIndex) => this.isRowCorrectAtOccupancy(previousOccupancy, rowIndex))
     const nextTiles = tilesFromOccupancy(nextOccupancy, this.letters)
-    const currentCorrect = countCorrectOccupancy(this.puzzle, this.occupancy, this.letters)
-    const nextCorrect = countCorrectOccupancy(this.puzzle, nextOccupancy, this.letters)
-    this.playerPath.push({ tiles: nextTiles.map((tile) => ({ ...tile })), deltaCorrect: nextCorrect - currentCorrect, correctCount: nextCorrect, swap: { firstSlot, secondSlot } })
-    this.tileSlots[firstSlot] = second
-    this.tileSlots[secondSlot] = first
-    this.occupancy = nextOccupancy
+    this.swapAnimating = true
+    this.playerPath.push({ tiles: nextTiles.map((tile) => ({ ...tile })), deltaCorrect: nextCorrectCount - previousCorrectCount, correctCount: nextCorrectCount, swap: { firstSlot, secondSlot } })
+    this.setOccupancy(nextOccupancy)
     this.movesTaken += 1
     trackWerdolEvent("werdol:move_executed", {
       puzzleId: this.puzzleId,
@@ -1040,8 +1308,6 @@ export class MainScene extends Phaser.Scene {
       interactionMode: this.interactionMode,
     })
     this.updateMoveInfo()
-    this.animateExchange(first, second, firstSlot, secondSlot)
-    this.updateRowFeedback()
     const newlyCompletedRows = this.puzzle.rows
       .map((_row, rowIndex) => rowIndex)
       .filter((rowIndex) => !previouslyCorrect[rowIndex] && this.isRowCorrect(rowIndex))
@@ -1058,7 +1324,7 @@ export class MainScene extends Phaser.Scene {
         minimumMoves: this.minimumMoves,
         elapsedMs: Math.max(0, Math.round(performance.now() - this.puzzleStartedAt)),
       })
-    } else if (this.movesTaken >= this.minimumMoves + EXTRA_MOVES) {
+    } else if (!this.outOfMovesDismissed && this.movesTaken >= this.minimumMoves + EXTRA_MOVES) {
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.showOutOfMoves())
       trackWerdolEvent("werdol:puzzle_ended", {
         puzzleId: this.puzzleId,
@@ -1082,21 +1348,32 @@ export class MainScene extends Phaser.Scene {
     const panel = this.add.rectangle(40, 265, 350, 210, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
     const title = this.add.text(215, 310, "OUT OF MOVES", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5)
     const message = this.add.text(215, 355, "The puzzle is still unsolved.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "16px", resolution: RENDER_SCALE }).setOrigin(0.5)
-    const button = this.add.rectangle(125, 405, 180, 38, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const label = this.add.text(215, 424, "NEW PUZZLE", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
-    button.on("pointerover", () => {
-      button.setFillStyle(COLORS.primaryButtonHover)
-      label.setColor(COLORS.primaryButtonText)
+    const subtext = this.add.text(215, 380, "… but if you'd like to keep going", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const returnButton = this.add.rectangle(70, 405, 140, 34, MainScene.INACTIVE_BUTTON_COLOR).setOrigin(0, 0).setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const returnLabel = this.add.text(140, 422, "RETURN TO GAME", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const newPuzzleButton = this.add.rectangle(220, 405, 140, 34, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const newPuzzleLabel = this.add.text(290, 422, "NEW PUZZLE", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
+    returnButton.on("pointerover", () => {
+      returnButton.setFillStyle(MainScene.ACTIVE_BUTTON_COLOR)
     })
-    button.on("pointerout", () => {
-      button.setFillStyle(COLORS.primaryButton)
-      label.setColor(COLORS.primaryButtonText)
+    returnButton.on("pointerout", () => {
+      returnButton.setFillStyle(MainScene.INACTIVE_BUTTON_COLOR)
     })
-    button.on("pointerdown", () => {
-      pendingOpeningStyle = "simultaneous"
+    returnButton.on("pointerdown", () => {
+      this.outOfMovesDismissed = true
+      overlay.setVisible(false)
+      this.outOfMovesOverlay = undefined
+    })
+    newPuzzleButton.on("pointerover", () => {
+      newPuzzleButton.setFillStyle(COLORS.primaryButtonHover)
+    })
+    newPuzzleButton.on("pointerout", () => {
+      newPuzzleButton.setFillStyle(COLORS.primaryButton)
+    })
+    newPuzzleButton.on("pointerdown", () => {
       this.restartWithSetup(this.nextPuzzleSetup())
     })
-    overlay.add([backdrop, panel, title, message, button, label])
+    overlay.add([backdrop, panel, title, message, subtext, returnButton, returnLabel, newPuzzleButton, newPuzzleLabel])
     this.outOfMovesOverlay = overlay
     this.tweens.add({ targets: overlay, alpha: 1, duration: UI_ENTRANCE_DURATION, ease: UI_ENTRANCE_EASE })
   }
@@ -1141,7 +1418,6 @@ export class MainScene extends Phaser.Scene {
       label.setColor(COLORS.primaryButtonText)
     })
     button.on("pointerdown", () => {
-      pendingOpeningStyle = "simultaneous"
       this.restartWithSetup(this.nextPuzzleSetup())
     })
     overlay.add([backdrop, ...dismissRegions, panel, title, target, message, button, label])
@@ -1177,50 +1453,30 @@ export class MainScene extends Phaser.Scene {
     completedRows.forEach((rowIndex) => celebrateCompletedRow(this, rows[rowIndex] ?? []))
   }
 
-  private revealTile(slotIndex: number): void {
-    const rowIndex = Math.floor(slotIndex / 5)
-    const columnIndex = slotIndex % 5
-    const row = this.puzzle.rows[rowIndex]
-    const expectedLetter = row?.intendedGuess[columnIndex]
-    const current = this.tileSlots[slotIndex]
-    if (expectedLetter === undefined || current === undefined) return
-    if (current.tile.letter === expectedLetter) {
-      return
-    }
-
-    const sourceSlot = this.occupancy.findIndex((letterId, index) => this.letters[letterId]?.character === expectedLetter && index !== slotIndex && !this.isLetterCorrectAtSlot(index))
-    if (sourceSlot < 0) {
-      return
-    }
-
-    this.swapTiles(slotIndex, sourceSlot)
+  private isLetterCorrectAtSlot(slotIndex: number): boolean {
+    return this.isLetterCorrectAtOccupancy(this.occupancy, slotIndex)
   }
 
-  private isLetterCorrectAtSlot(slotIndex: number): boolean {
-    return isLetterCorrectAtSlot(this.puzzle, this.occupancy, this.letters, slotIndex)
+  private isLetterCorrectAtOccupancy(occupancy: readonly number[], slotIndex: number): boolean {
+    return isLetterCorrectAtSlot(this.puzzle, occupancy, this.letters, slotIndex)
   }
 
   private isRowCorrect(rowIndex: number): boolean {
+    return this.isRowCorrectAtOccupancy(this.occupancy, rowIndex)
+  }
+
+  private isRowCorrectAtOccupancy(occupancy: readonly number[], rowIndex: number): boolean {
     const target = rowIndex === this.puzzle.rows.length ? this.puzzle.target : this.puzzle.rows[rowIndex]?.intendedGuess
-    return target !== undefined && this.occupancy
+    return target !== undefined && occupancy
       .slice(rowIndex * 5, (rowIndex + 1) * 5)
       .map((letterId) => this.letters[letterId]?.character ?? "")
       .join("") === target
   }
 
-  private animateExchange(first: TileVisual, second: TileVisual, firstSlot: number, secondSlot: number): void {
-    this.swapAnimating = true
-    first.text.setAngle(30)
-    second.text.setAngle(30)
-    this.animateTextExchange(first.text, second.text, firstSlot, secondSlot, () => {
-      const firstPoint = this.slotCenter(firstSlot)
-      const secondPoint = this.slotCenter(secondSlot)
-      first.text.setPosition(secondPoint.x, secondPoint.y).setDepth(10)
-      second.text.setPosition(firstPoint.x, firstPoint.y).setDepth(10)
-      first.text.setAngle(0)
-      second.text.setAngle(0)
-      this.swapAnimating = false
-      this.updateRowFeedback()
+  private startWalkthrough(): void {
+    if (this.walkthrough !== undefined || this.swapAnimating || this.puzzleCreationFailed || this.reviewOverlay !== undefined) return
+    this.walkthrough = new PuzzleWalkthrough(this, this.tileRendererMode, () => {
+      this.walkthrough = undefined
     })
   }
 
@@ -1233,35 +1489,36 @@ export class MainScene extends Phaser.Scene {
   ): Phaser.Tweens.Tween {
     const startFirst = this.slotCenter(firstSlot)
     const startSecond = this.slotCenter(secondSlot)
-    const distanceX = startSecond.x - startFirst.x
-    const distanceY = startSecond.y - startFirst.y
-    const distance = Math.hypot(distanceX, distanceY)
-    const perpendicular = { x: -distanceY / distance, y: distanceX / distance }
-    const arcHeight = Math.min(40, Math.max(20, distance * 0.3))
-    const midpoint = { x: (startFirst.x + startSecond.x) / 2, y: (startFirst.y + startSecond.y) / 2 }
-    const firstControl = {
-      x: midpoint.x + perpendicular.x * arcHeight * this.swapDirection,
-      y: midpoint.y + perpendicular.y * arcHeight * this.swapDirection,
-    }
-    const secondControl = {
-      x: midpoint.x - perpendicular.x * arcHeight * this.swapDirection,
-      y: midpoint.y - perpendicular.y * arcHeight * this.swapDirection,
-    }
-    this.swapDirection *= -1
+    const distance = Math.hypot(startSecond.x - startFirst.x, startSecond.y - startFirst.y)
+    const radius = Math.max(distance * 0.5, distance * devSessionState.titleArcRadiusMultiplier)
+    const circleSide = Math.random() < 0.5 ? -1 : 1
+    const firstArc = createCircularArc(startFirst, startSecond, radius, circleSide, true)
+    const secondArc = mirrorCircularArc(firstArc, startFirst, startSecond)
+    const arcVisuals = [
+      new CircularArcVisual(this, firstArc, 0xc49f52),
+      new CircularArcVisual(this, secondArc, 0x71845f),
+    ]
+    arcVisuals.forEach((arc) => {
+      arc.setDepth(SWAP_ARC_DEPTH)
+      arc.animateIn(ARC_ANIMATION_DURATION)
+    })
+    this.time.delayedCall(TILE_SWAP_ANIMATION_DURATION - ARC_ANIMATION_DURATION, () => {
+      arcVisuals.forEach((arc) => arc.animateOut(ARC_ANIMATION_DURATION, () => arc.destroy()))
+    })
     return this.tweens.addCounter({
       from: 0,
       to: 1,
-      duration: 300,
+      duration: TILE_SWAP_ANIMATION_DURATION,
       ease: "Sine.easeInOut",
       onUpdate: (tween) => {
         const progress = tween.getValue()
         if (progress === null) return
-        const firstPoint = quadraticPoint(startFirst, firstControl, startSecond, progress)
-        const secondPoint = quadraticPoint(startSecond, secondControl, startFirst, progress)
+        const firstPoint = pointOnCircularArc(firstArc, progress)
+        const secondPoint = pointOnCircularArc(secondArc, progress)
         firstText.setPosition(firstPoint.x, firstPoint.y)
         secondText.setPosition(secondPoint.x, secondPoint.y)
-        firstText.setAngle(30 * (1 - progress))
-        secondText.setAngle(30 * (1 - progress))
+        firstText.setAngle(30)
+        secondText.setAngle(30)
       },
       onComplete: () => {
         firstText.setPosition(startSecond.x, startSecond.y)
@@ -1273,21 +1530,11 @@ export class MainScene extends Phaser.Scene {
     })
   }
 
-  private updateSelection(): void {
-    this.slotBackgrounds.forEach((background, slotIndex) => {
-      const row = this.puzzle.rows[Math.floor(slotIndex / 5)]
-      const result = row?.pattern[slotIndex % 5] ?? "absent"
-      background.setStrokeStyle(BOARD_LAYOUT.tileBorderWidth, this.colorFor(result))
-    })
-    this.tileSlots.forEach((visual, slotIndex) => visual.text.setAngle(slotIndex === this.selectedSlot ? 30 : 0))
-  }
-
   private updateRowFeedback(): void {
     this.tileBackgrounds.forEach((_background, slotIndex) => {
       const rowIndex = Math.floor(slotIndex / 5)
       const correct = rowIndex === this.puzzle.rows.length || this.isLetterCorrectAtSlot(slotIndex)
-      this.tileBackgrounds[slotIndex]?.setSize(CELL_SIZE, CELL_SIZE)
-      this.correctTileFeedback.animate(this, this.tileBackgrounds[slotIndex], correct ? "correct" : "incorrect")
+      this.tileRenderer.animateTileState(this, this.tileBackgrounds[slotIndex], correct ? "matched" : "unmatched")
     })
   }
 
@@ -1295,10 +1542,6 @@ export class MainScene extends Phaser.Scene {
     const rowIndex = Math.floor(slotIndex / 5)
     const columnIndex = slotIndex % 5
     return boardSlotCenter(rowIndex, columnIndex)
-  }
-
-  private colorFor(result: WerdolPuzzle["rows"][number]["pattern"][number]): number {
-    return tileColor(result)
   }
 
   private enterReviewMode(): void {
@@ -1596,16 +1839,7 @@ export class MainScene extends Phaser.Scene {
   }
 
   private applyTileState(state: readonly LetterTile[]): void {
-    const visualsById = new Map(this.tileSlots.map((visual) => [visual.tile.id, visual]))
-    const nextVisuals = state.map((tile) => visualsById.get(tile.id)).filter((visual): visual is TileVisual => visual !== undefined)
-    if (nextVisuals.length !== this.tileSlots.length) return
-    this.tileSlots = nextVisuals
-    this.occupancy = state.map((tile) => tile.id)
-    this.tileSlots.forEach((visual, slotIndex) => {
-      visual.tile = { ...state[slotIndex]! }
-      const center = this.slotCenter(slotIndex)
-      visual.text.setText(visual.tile.letter).setPosition(center.x, center.y).setDepth(10).setAngle(0)
-    })
+    if (!this.gameBoard?.applyTileState(state)) return
   }
 
   private drawReviewBoard(state: readonly LetterTile[]): void {
@@ -1618,10 +1852,10 @@ export class MainScene extends Phaser.Scene {
         const center = this.slotCenter(slotIndex)
         const tile = state[slotIndex]
         if (tile === undefined) return
-        const background = createTileBackground(this, center, result, REVIEW_PRESENTATION)
+        const background = this.tileRenderer.createTile(this, center, tileColor(result))
         this.reviewBoard?.add(background)
         const text = createTileLetter(this, center, tile.letter, REVIEW_PRESENTATION)
-        this.correctTileFeedback.mark(background, tile.letter === row.intendedGuess[columnIndex] ? "correct" : "incorrect")
+        renderTileState(this.tileRenderer, background, tile.letter === row.intendedGuess[columnIndex] ? "matched" : "unmatched")
         this.reviewBoard?.add(text)
         this.reviewTileTexts[slotIndex] = text
       })
