@@ -28,6 +28,8 @@ const HALO_UNMATCHED_OUTER_FADE_DURATION = 360
 
 export interface TileStateRenderer {
   createTile(scene: Phaser.Scene, center: BoardPoint, fillColor: number): Phaser.GameObjects.Rectangle
+  syncTilePosition(tile: Phaser.GameObjects.Rectangle | undefined): void
+  syncTileRevealAlpha?(tile: Phaser.GameObjects.Rectangle | undefined, alpha: number): void
   renderMatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void
   renderUnmatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void
   animateTileState(scene: Phaser.Scene, tile: Phaser.GameObjects.Rectangle | undefined, state: LetterTileState): void
@@ -70,6 +72,8 @@ export class ShapeTileRenderer implements TileStateRenderer {
   createTile(scene: Phaser.Scene, center: BoardPoint, fillColor: number): Phaser.GameObjects.Rectangle {
     return createRendererTile(scene, center, fillColor)
   }
+
+  syncTilePosition(_tile: Phaser.GameObjects.Rectangle | undefined): void {}
 
   renderMatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void {
     this.renderShape(tile, this.matchedAppearance)
@@ -197,6 +201,8 @@ abstract class CornerMarkTileRenderer implements TileStateRenderer {
     return createRendererTile(scene, center, fillColor)
   }
 
+  syncTilePosition(_tile: Phaser.GameObjects.Rectangle | undefined): void {}
+
   renderMatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void {
     this.renderCornerMark(tile, "matched")
   }
@@ -277,6 +283,8 @@ export class PulseTileRenderer implements TileStateRenderer {
     return createRendererTile(scene, center, fillColor)
   }
 
+  syncTilePosition(_tile: Phaser.GameObjects.Rectangle | undefined): void {}
+
   renderMatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void {
     this.renderPulseBase(tile)
   }
@@ -330,6 +338,8 @@ export class TiltTileRenderer implements TileStateRenderer {
     return createRendererTile(scene, center, fillColor)
   }
 
+  syncTilePosition(_tile: Phaser.GameObjects.Rectangle | undefined): void {}
+
   renderMatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void {
     this.renderTilt(tile, "matched")
   }
@@ -379,9 +389,21 @@ export class HaloTileRenderer implements TileStateRenderer {
   private readonly outerByTile = new Map<Phaser.GameObjects.Rectangle, Phaser.GameObjects.Rectangle>()
   private readonly stateByTile = new WeakMap<Phaser.GameObjects.Rectangle, LetterTileState>()
   private readonly tweensByTile = new WeakMap<Phaser.GameObjects.Rectangle, Phaser.Tweens.Tween[]>()
+  private readonly revealAlphaByTile = new WeakMap<Phaser.GameObjects.Rectangle, number>()
 
   createTile(scene: Phaser.Scene, center: BoardPoint, fillColor: number): Phaser.GameObjects.Rectangle {
     return createRendererTile(scene, center, fillColor)
+  }
+
+  syncTilePosition(tile: Phaser.GameObjects.Rectangle | undefined): void {
+    if (!tile) return
+    this.outerByTile.get(tile)?.setPosition(tile.x, tile.y)
+  }
+
+  syncTileRevealAlpha(tile: Phaser.GameObjects.Rectangle | undefined, alpha: number): void {
+    if (!tile) return
+    this.revealAlphaByTile.set(tile, alpha)
+    this.outerByTile.get(tile)?.setAlpha(alpha)
   }
 
   renderMatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void {
@@ -400,6 +422,7 @@ export class HaloTileRenderer implements TileStateRenderer {
     const outerShape = HALO_UNMATCHED_OUTER_SHAPE
     const outer = this.outerFor(tile)
     outer.setPosition(tile.x, tile.y)
+      .setAlpha(this.revealAlphaFor(tile))
       .setSize(outerShape.size, outerShape.size)
       .setRounded(outerShape.cornerRadius)
       .setFillStyle(tile.fillColor, HALO_OUTER_ALPHA)
@@ -450,7 +473,7 @@ export class HaloTileRenderer implements TileStateRenderer {
     const outer = this.outerFor(tile)
     const inner = { size: tile.width, radius: tile.radius }
     const outerShape = { size: HALO_UNMATCHED_OUTER_SHAPE.size, radius: HALO_UNMATCHED_OUTER_SHAPE.cornerRadius, alpha: HALO_OUTER_ALPHA }
-    outer.setPosition(tile.x, tile.y).setVisible(true).setAlpha(1)
+    outer.setPosition(tile.x, tile.y).setVisible(true).setAlpha(this.revealAlphaFor(tile))
     outer.setSize(outerShape.size, outerShape.size)
       .setRounded(outerShape.radius)
       .setFillStyle(tile.fillColor, outerShape.alpha)
@@ -497,7 +520,7 @@ export class HaloTileRenderer implements TileStateRenderer {
     const outerShape = { size: HALO_UNMATCHED_OUTER_SHAPE.size, radius: HALO_UNMATCHED_OUTER_SHAPE.cornerRadius, alpha: HALO_HIDDEN_ALPHA }
     outer.setPosition(tile.x, tile.y)
       .setVisible(true)
-      .setAlpha(1)
+      .setAlpha(this.revealAlphaFor(tile))
       .setDepth(tile.depth - 1)
     outer.setSize(outerShape.size, outerShape.size)
       .setRounded(outerShape.radius)
@@ -533,7 +556,7 @@ export class HaloTileRenderer implements TileStateRenderer {
 
   private applyOuterShape(outer: Phaser.GameObjects.Rectangle, tile: Phaser.GameObjects.Rectangle, shape: { size: number; radius: number; alpha: number }): void {
     outer.setPosition(tile.x, tile.y)
-      .setAlpha(1)
+      .setAlpha(this.revealAlphaFor(tile))
       .setSize(shape.size, shape.size)
       .setRounded(shape.radius)
       .setFillStyle(tile.fillColor, shape.alpha)
@@ -551,6 +574,10 @@ export class HaloTileRenderer implements TileStateRenderer {
     if (tile.parentContainer) tile.parentContainer.add(outer)
     this.outerByTile.set(tile, outer)
     return outer
+  }
+
+  private revealAlphaFor(tile: Phaser.GameObjects.Rectangle): number {
+    return this.revealAlphaByTile.get(tile) ?? 1
   }
 }
 

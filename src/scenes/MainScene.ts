@@ -417,6 +417,7 @@ export class MainScene extends Phaser.Scene {
     this.howToPlayOverlay.add([backdrop, panel, title, instructions, walkthroughButton, walkthroughLabel])
     infoButton.on("pointerdown", () => this.howToPlayOverlay.setVisible(!this.howToPlayOverlay.visible))
     backdrop.on("pointerdown", () => this.howToPlayOverlay.setVisible(false))
+    this.queueUiEntrance([infoButton, infoLabel])
 
     const sayHello = this.add.text(215, 720, "say hello", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(0.5).setInteractive({ useHandCursor: true })
     let feedbackTimer: Phaser.Time.TimerEvent | undefined
@@ -540,6 +541,7 @@ export class MainScene extends Phaser.Scene {
     this.tileBackgrounds.forEach((background, slotIndex) => {
       const center = this.slotCenter(slotIndex)
       background.setPosition(center.x, center.y).setAlpha(1).setScale(1)
+      this.gameBoard?.syncTileRevealAlpha(slotIndex, 1)
       const letterId = this.initialOccupancy[slotIndex]
       this.openingLetterVisuals.get(letterId ?? -1)?.setPosition(center.x, center.y).setAlpha(0).setScale(1).setMode("asterisk")
     })
@@ -678,6 +680,8 @@ export class MainScene extends Phaser.Scene {
         background.setFillStyle(TILE_COLORS.empty).setStrokeStyle(BOARD_LAYOUT.tileBorderWidth, TILE_COLORS.empty)
       }
       background.setPosition(center.x, center.y).setAlpha(0)
+      this.gameBoard?.syncTilePosition(slotIndex)
+      this.gameBoard?.syncTileRevealAlpha(slotIndex, 0)
       if (this.openingExplanationPending) {
         const letterId = this.initialOccupancy[slotIndex]
         this.openingLetterVisuals.get(letterId ?? -1)?.setPosition(center.x, center.y).setAlpha(0).setMode("asterisk")
@@ -692,6 +696,8 @@ export class MainScene extends Phaser.Scene {
       const center = this.slotCenter(slotIndex)
       const text = this.tileSlots[slotIndex]?.text
       background.setPosition(center.x, center.y + BOARD_WARMUP_DISTANCE).setAlpha(0)
+      this.gameBoard?.syncTilePosition(slotIndex)
+      this.gameBoard?.syncTileRevealAlpha(slotIndex, 0)
       text?.setPosition(center.x, center.y + BOARD_WARMUP_DISTANCE).setAlpha(0)
       this.tweens.add({
         targets: background,
@@ -700,6 +706,10 @@ export class MainScene extends Phaser.Scene {
         duration: BOARD_WARMUP_DURATION,
         delay: slotIndex * BOARD_WARMUP_STAGGER,
         ease: "Cubic.Out",
+        onUpdate: () => {
+          this.gameBoard?.syncTilePosition(slotIndex)
+          this.gameBoard?.syncTileRevealAlpha(slotIndex, background.alpha)
+        },
       })
       if (text) {
         this.tweens.add({
@@ -719,6 +729,8 @@ export class MainScene extends Phaser.Scene {
     this.tileBackgrounds.forEach((background, slotIndex) => {
       const center = this.slotCenter(slotIndex)
       background.setPosition(center.x, center.y).setAlpha(1)
+      this.gameBoard?.syncTilePosition(slotIndex)
+      this.gameBoard?.syncTileRevealAlpha(slotIndex, 1)
       const text = this.tileSlots[slotIndex]?.text
       const letterId = this.occupancy[slotIndex]
       text?.setPosition(center.x, center.y).setText(this.letters[letterId ?? 0]?.character ?? "").setAlpha(1)

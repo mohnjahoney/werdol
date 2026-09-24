@@ -122,6 +122,14 @@ export class GameBoard {
     this.bringLettersToFront()
   }
 
+  syncTilePosition(slotIndex: number): void {
+    this.tileRenderer.syncTilePosition(this.tileBackgrounds[slotIndex])
+  }
+
+  syncTileRevealAlpha(slotIndex: number, alpha: number): void {
+    this.tileRenderer.syncTileRevealAlpha?.(this.tileBackgrounds[slotIndex], alpha)
+  }
+
   bringLettersToFront(): void {
     this.tileSlots.forEach(({ text }) => {
       text.setDepth(20)
