@@ -59,11 +59,11 @@ const UI_ENTRANCE_DURATION = 260
 const UI_ENTRANCE_OFFSET_Y = 12
 const UI_ENTRANCE_EASE = "Sine.Out"
 const FINISH_PHRASES = {
-  extraOne: ["Nicely done", "Sharp work", "Well played", "Nice solve", "Good work", "Nicely solved", "You got it", "Strong finish"],
-  extraTwo: ["Very nicely done", "Strong work", "A good solve", "Nicely solved", "Well found", "Good finish", "Nicely handled", "That works"],
-  extraThree: ["Great finish", "Well found", "You got there", "A fine solve", "Nicely done", "Strong finish", "Good solve", "That’s the word"],
-  goal: ["Excellent solve", "Beautifully solved", "Right on target", "You nailed it", "Great solve", "Perfectly placed", "Exactly right", "Nicely played"],
-  underGoal: ["Brilliant solve", "Exceptional work", "Beautiful work", "Masterfully solved", "Outstanding", "A superb solve", "That was excellent", "You found it"],
+  extraOne: ["Nicely rebuilt", "Sharp work", "Well restored", "Good work", "Everything’s in place", "Clean finish", "Nicely handled", "Board restored"],
+  extraTwo: ["Well reconstructed", "Strong work", "Nicely rebuilt", "Good finish", "Nearly perfect", "Well restored", "Sharp work", "Everything’s in place"],
+  extraThree: ["Great finish", "Nicely rebuilt", "You got there", "A fine reconstruction", "Good work", "Strong finish", "Well restored", "Everything’s in place"],
+  goal: ["Excellent reconstruction", "Beautifully rebuilt", "Perfectly restored", "You nailed it", "Great work", "Everything’s in place", "Exactly right", "Nicely played"],
+  underGoal: ["Brilliant reconstruction", "Exceptional work", "Beautiful work", "Masterfully rebuilt", "Outstanding", "A superb reconstruction", "That was excellent", "Everything’s in place"],
 } as const
 
 type TileVisual = GameBoardTileVisual
@@ -1412,9 +1412,8 @@ export class MainScene extends Phaser.Scene {
       dismissRegion(390, 265, 40, 210),
     ]
     const panel = this.add.rectangle(40, 265, 350, 210, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
-    const title = this.add.text(215, 310, "SOLVED", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5)
-    const target = this.add.text(215, 350, this.puzzle.target, { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "24px", fontStyle: "bold", letterSpacing: 2, resolution: RENDER_SCALE }).setOrigin(0.5)
-    const message = this.add.text(215, 382, phrase, { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "17px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const title = this.add.text(215, 330, "SOLVED", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const message = this.add.text(215, 372, phrase, { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "17px", resolution: RENDER_SCALE }).setOrigin(0.5)
     const button = this.add.rectangle(125, 415, 180, 38, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
     const label = this.add.text(215, 434, "NEW PUZZLE", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
     button.on("pointerover", () => {
@@ -1428,7 +1427,7 @@ export class MainScene extends Phaser.Scene {
     button.on("pointerdown", () => {
       this.restartWithSetup(this.nextPuzzleSetup())
     })
-    overlay.add([backdrop, ...dismissRegions, panel, title, target, message, button, label])
+    overlay.add([backdrop, ...dismissRegions, panel, title, message, button, label])
     this.finishOverlay = overlay
     this.tweens.add({ targets: overlay, alpha: 1, duration: UI_ENTRANCE_DURATION, ease: UI_ENTRANCE_EASE })
   }
