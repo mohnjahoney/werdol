@@ -31,10 +31,13 @@ const COLORS = {
   mutedNumeric: 0x756d5e,
   button: 0xc6bdae,
   buttonHover: 0x71845f,
-  primaryButton: 0x71845f,
-  primaryButtonHover: 0x526646,
-  primaryButtonText: "#f3eedf",
+  primaryButton: 0xc6bdae,
+  primaryButtonHover: 0x71845f,
+  primaryButtonText: "#211f1a",
+  primaryButtonHoverText: "#f3eedf",
   buttonHoverText: "#f3eedf",
+  infoButton: 0xe8d89f,
+  infoButtonHover: 0xc49f52,
   reviewHover: 0xe5a5bc,
 } as const
 const SWAP_ANIMATION_DURATION = 480
@@ -306,15 +309,20 @@ export class MainScene extends Phaser.Scene {
       this.openingAnimation = new OpeningAnimation(this, () => this.finishOpeningAnimation(), { arcRadiusMultiplier: devSessionState.titleArcRadiusMultiplier })
       this.input.once("pointerdown", this.skipOpeningAnimation, this)
     }
-    addWerdolHeader(this)
-    const devButton = this.add.circle(410, 18, 8, COLORS.button, 0.92)
-      .setStrokeStyle(1.5, COLORS.mutedNumeric)
-      .setInteractive({ useHandCursor: true })
-    devButton.on("pointerdown", () => this.setDevPanelVisible(!this.devPanel.visible))
-    const rendererButton = this.add.rectangle(390, 18, 12, 12, COLORS.button, 0.92)
-      .setStrokeStyle(1.5, COLORS.mutedNumeric)
-      .setInteractive({ useHandCursor: true })
-    rendererButton.on("pointerdown", () => this.setTileRendererPanelVisible(!this.tileRendererPanel.visible))
+    const header = addWerdolHeader(this)
+    if (this.isDeveloperUrl()) {
+      const rendererTrigger = header.pieces.find((piece) => piece.character === "O")?.display
+      if (rendererTrigger instanceof Phaser.GameObjects.Rectangle) {
+        rendererTrigger.setInteractive({ useHandCursor: true })
+        rendererTrigger.on("pointerover", () => rendererTrigger.setScale(1.08))
+        rendererTrigger.on("pointerout", () => rendererTrigger.setScale(1))
+        rendererTrigger.on("pointerdown", () => this.setTileRendererPanelVisible(!this.tileRendererPanel.visible))
+      }
+      const devButton = this.add.circle(410, 18, 8, COLORS.button, 0.92)
+        .setStrokeStyle(1.5, COLORS.mutedNumeric)
+        .setInteractive({ useHandCursor: true })
+      devButton.on("pointerdown", () => this.setDevPanelVisible(!this.devPanel.visible))
+    }
 
     if (this.puzzleCreationFailed) {
       this.add.text(31, 235, "NO PUZZLE FOUND", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", resolution: RENDER_SCALE })
@@ -350,6 +358,10 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
+  private isDeveloperUrl(): boolean {
+    return new URLSearchParams(window.location.search).get("dev") === "1"
+  }
+
   private markOpeningSeen(): void {
     try {
       window.sessionStorage.setItem(OPENING_SEEN_KEY, "true")
@@ -377,7 +389,7 @@ export class MainScene extends Phaser.Scene {
     const label = this.add.text(215, 664, "NEW PUZZLE", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
     button.on("pointerover", () => {
       button.setFillStyle(COLORS.primaryButtonHover)
-      label.setColor(COLORS.primaryButtonText)
+      label.setColor(COLORS.primaryButtonHoverText)
     })
     button.on("pointerout", () => {
       button.setFillStyle(COLORS.primaryButton)
@@ -390,14 +402,14 @@ export class MainScene extends Phaser.Scene {
   }
 
   private buildHowToPlay(): void {
-    const infoButton = this.add.circle(330, 664, 11, COLORS.button).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const infoButton = this.add.circle(330, 664, 11, COLORS.infoButton).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
     const infoLabel = this.add.text(330, 664, "i", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "16px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
     infoButton.on("pointerover", () => {
-      infoButton.setFillStyle(COLORS.buttonHover)
+      infoButton.setFillStyle(COLORS.infoButtonHover)
       infoLabel.setColor(COLORS.buttonHoverText)
     })
     infoButton.on("pointerout", () => {
-      infoButton.setFillStyle(COLORS.button)
+      infoButton.setFillStyle(COLORS.infoButton)
       infoLabel.setColor(COLORS.ink)
     })
 
@@ -408,8 +420,14 @@ export class MainScene extends Phaser.Scene {
     const instructions = this.add.text(50, 230, "WERDOL begins where Wordle ends...\n\nA Wordle game has been played and completed.\n\nHowever!..\n\nThe letters in the first four rows have been mixed up, but the colors stayed in place.\n\nTap two letters to swap. Tiles become square when they receive the right letter. Rebuild the four rows in as few moves as possible.\n\nGreen is correct, yellow is misplaced, and gray is absent.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", lineSpacing: 5, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
     const walkthroughButton = this.add.rectangle(50, 600, 330, 36, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
     const walkthroughLabel = this.add.text(215, 618, "SEE HOW IT WORKS", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "11px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setOrigin(0.5)
-    walkthroughButton.on("pointerover", () => walkthroughButton.setFillStyle(COLORS.primaryButtonHover))
-    walkthroughButton.on("pointerout", () => walkthroughButton.setFillStyle(COLORS.primaryButton))
+    walkthroughButton.on("pointerover", () => {
+      walkthroughButton.setFillStyle(COLORS.primaryButtonHover)
+      walkthroughLabel.setColor(COLORS.primaryButtonHoverText)
+    })
+    walkthroughButton.on("pointerout", () => {
+      walkthroughButton.setFillStyle(COLORS.primaryButton)
+      walkthroughLabel.setColor(COLORS.primaryButtonText)
+    })
     walkthroughButton.on("pointerdown", () => {
       this.howToPlayOverlay.setVisible(false)
       this.startWalkthrough()
@@ -421,8 +439,16 @@ export class MainScene extends Phaser.Scene {
 
     const sayHello = this.add.text(215, 720, "say hello", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(0.5).setInteractive({ useHandCursor: true })
     let feedbackTimer: Phaser.Time.TimerEvent | undefined
-    sayHello.on("pointerover", () => sayHello.setColor(COLORS.ink))
-    sayHello.on("pointerout", () => sayHello.setColor(COLORS.muted))
+    sayHello.on("pointerover", () => {
+      this.tweens.killTweensOf(sayHello)
+      sayHello.setColor(COLORS.ink).setShadow(0, 2, "#c49f52", 0.42, false, false)
+      this.tweens.add({ targets: sayHello, y: 716, scale: 1.1, duration: 140, ease: "Back.Out" })
+    })
+    sayHello.on("pointerout", () => {
+      this.tweens.killTweensOf(sayHello)
+      sayHello.setColor(COLORS.muted).setShadow(0, 0, "#000000", 0, false, false)
+      this.tweens.add({ targets: sayHello, y: 720, scale: 1, duration: 120, ease: "Sine.Out" })
+    })
     sayHello.on("pointerdown", async () => {
       try {
         await navigator.clipboard.writeText("mohnjahoney@gmail.com")
@@ -791,26 +817,23 @@ export class MainScene extends Phaser.Scene {
   private buildTileRendererPanel(): void {
     const modes: Array<{ id: TileRendererMode; label: string }> = [
       { id: "shape", label: "SHAPE" },
-      { id: "stamp", label: "STAMP" },
       { id: "pulse", label: "PULSE" },
       { id: "tilt", label: "TILT" },
       { id: "halo", label: "HALO" },
     ]
     this.tileRendererOverlay = this.add.rectangle(0, 0, 430, 760, 0x000000, 0).setOrigin(0, 0).setDepth(59).setInteractive()
     this.tileRendererOverlay.on("pointerdown", () => this.setTileRendererPanelVisible(false))
-    this.tileRendererPanel = this.add.container(25, 250).setDepth(60)
-    const panel = this.add.rectangle(0, 0, 380, 190, 0xfaf6e9).setOrigin(0, 0).setStrokeStyle(2, MainScene.BUTTON_STROKE_COLOR).setInteractive()
-    const heading = this.add.text(20, 20, "TILE RENDERER", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE })
-    const close = this.add.text(355, 20, "CLOSE", { color: COLORS.muted, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(1, 0).setInteractive({ useHandCursor: true })
+    this.tileRendererPanel = this.add.container(55, 285).setDepth(60)
+    const panel = this.add.rectangle(0, 0, 320, 150, 0xfaf6e9).setOrigin(0, 0).setStrokeStyle(2, MainScene.BUTTON_STROKE_COLOR).setInteractive()
+    const heading = this.add.text(160, 22, "TILE RENDERER", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const close = this.add.text(296, 18, "CLOSE", { color: COLORS.muted, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(1, 0).setInteractive({ useHandCursor: true })
     close.on("pointerdown", () => this.setTileRendererPanelVisible(false))
     const buttons = modes.map((mode, index) => {
-      const column = index % 4
-      const row = Math.floor(index / 4)
-      const button = this.add.rectangle(20 + column * 58, 70 + row * 36, 54, 30, MainScene.INACTIVE_BUTTON_COLOR)
+      const button = this.add.rectangle(23 + index * 69, 76, 64, 36, MainScene.INACTIVE_BUTTON_COLOR)
         .setOrigin(0, 0)
         .setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR)
         .setInteractive({ useHandCursor: true })
-      const label = this.add.text(button.x + 27, button.y + 15, mode.label, { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "8px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
+      const label = this.add.text(button.x + 32, button.y + 18, mode.label, { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "9px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
       button.on("pointerdown", () => this.setTileRendererMode(mode.id))
       this.tileRendererPanel.add([button, label])
       return { id: mode.id, button, label }
@@ -1374,9 +1397,11 @@ export class MainScene extends Phaser.Scene {
     })
     newPuzzleButton.on("pointerover", () => {
       newPuzzleButton.setFillStyle(COLORS.primaryButtonHover)
+      newPuzzleLabel.setColor(COLORS.primaryButtonHoverText)
     })
     newPuzzleButton.on("pointerout", () => {
       newPuzzleButton.setFillStyle(COLORS.primaryButton)
+      newPuzzleLabel.setColor(COLORS.primaryButtonText)
     })
     newPuzzleButton.on("pointerdown", () => {
       this.restartWithSetup(this.nextPuzzleSetup())
@@ -1418,7 +1443,7 @@ export class MainScene extends Phaser.Scene {
     const label = this.add.text(215, 434, "NEW PUZZLE", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
     button.on("pointerover", () => {
       button.setFillStyle(COLORS.primaryButtonHover)
-      label.setColor(COLORS.primaryButtonText)
+      label.setColor(COLORS.primaryButtonHoverText)
     })
     button.on("pointerout", () => {
       button.setFillStyle(COLORS.primaryButton)

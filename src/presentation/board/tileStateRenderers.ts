@@ -2,7 +2,7 @@ import Phaser from "phaser"
 import { BOARD_LAYOUT, type BoardPoint } from "./boardLayout"
 
 export type LetterTileState = "matched" | "unmatched"
-export type TileRendererMode = "shape" | "stamp" | "pulse" | "tilt" | "halo"
+export type TileRendererMode = "shape" | "pulse" | "tilt" | "halo"
 
 export interface TileShape {
   size: number
@@ -189,91 +189,6 @@ export class ShapeTileRenderer implements TileStateRenderer {
 
 export function createTileRenderer(): TileStateRenderer {
   return new ShapeTileRenderer()
-}
-
-abstract class CornerMarkTileRenderer implements TileStateRenderer {
-  private readonly markers = new Map<Phaser.GameObjects.Rectangle, Phaser.GameObjects.Graphics>()
-  private readonly tweens = new Map<Phaser.GameObjects.Rectangle, Phaser.Tweens.Tween>()
-
-  constructor() {}
-
-  createTile(scene: Phaser.Scene, center: BoardPoint, fillColor: number): Phaser.GameObjects.Rectangle {
-    return createRendererTile(scene, center, fillColor)
-  }
-
-  syncTilePosition(_tile: Phaser.GameObjects.Rectangle | undefined): void {}
-
-  renderMatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void {
-    this.renderCornerMark(tile, "matched")
-  }
-
-  renderUnmatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void {
-    this.renderCornerMark(tile, "unmatched")
-  }
-
-  private renderCornerMark(tile: Phaser.GameObjects.Rectangle | undefined, state: LetterTileState): void {
-    if (!tile) return
-    const marker = this.markerFor(tile)
-    marker.setAlpha(state === "matched" ? 1 : 0)
-  }
-
-  animateTileState(scene: Phaser.Scene, tile: Phaser.GameObjects.Rectangle | undefined, state: LetterTileState): void {
-    if (!tile) return
-    const marker = this.markerFor(tile)
-    this.cancelTileAnimation(tile)
-    if (state === "unmatched") {
-      marker.setAlpha(0)
-      return
-    }
-    marker.setAlpha(0).setScale(0.4)
-    const tween = scene.tweens.add({
-      targets: marker,
-      alpha: 1,
-      scale: 1,
-      duration: 320,
-      ease: "Back.Out",
-      onComplete: () => this.tweens.delete(tile),
-    })
-    this.tweens.set(tile, tween)
-  }
-
-  cancelTileAnimation(tile: Phaser.GameObjects.Rectangle | undefined): void {
-    if (!tile) return
-    this.tweens.get(tile)?.stop()
-    this.tweens.delete(tile)
-  }
-
-  resetTileEffects(tile: Phaser.GameObjects.Rectangle | undefined): void {
-    if (!tile) return
-    this.cancelTileAnimation(tile)
-    this.markers.get(tile)?.setAlpha(0)
-  }
-
-  destroy(): void {
-    this.tweens.forEach((tween) => tween.stop())
-    this.tweens.clear()
-    this.markers.forEach((marker) => marker.destroy())
-    this.markers.clear()
-  }
-
-  private markerFor(tile: Phaser.GameObjects.Rectangle): Phaser.GameObjects.Graphics {
-    const existing = this.markers.get(tile)
-    if (existing) return existing
-    const marker = tile.scene.add.graphics().setPosition(tile.x, tile.y)
-    marker.setDepth(tile.depth + 1)
-    marker.fillStyle(0xfffdf7, 1)
-    marker.fillCircle(tile.width / 2 - 10, -tile.height / 2 + 10, 4)
-    marker.lineStyle(1.5, 0xfffdf7, 1)
-    marker.strokeCircle(tile.width / 2 - 10, -tile.height / 2 + 10, 7)
-    marker.setAlpha(0)
-    if (tile.parentContainer) tile.parentContainer.add(marker)
-    this.markers.set(tile, marker)
-    return marker
-  }
-}
-
-export class StampTileRenderer extends CornerMarkTileRenderer {
-  constructor() { super() }
 }
 
 export class PulseTileRenderer implements TileStateRenderer {
@@ -583,7 +498,6 @@ export class HaloTileRenderer implements TileStateRenderer {
 
 export function createTileRendererForMode(mode: TileRendererMode): TileStateRenderer {
   switch (mode) {
-    case "stamp": return new StampTileRenderer()
     case "pulse": return new PulseTileRenderer()
     case "tilt": return new TiltTileRenderer()
     case "halo": return new HaloTileRenderer()
