@@ -35,6 +35,10 @@ const COLORS = {
   primaryButtonHover: 0x71845f,
   primaryButtonText: "#211f1a",
   primaryButtonHoverText: "#f3eedf",
+  newPuzzleButton: 0xb6c99c,
+  newPuzzleButtonHover: 0x71845f,
+  newPuzzleButtonText: "#211f1a",
+  newPuzzleButtonHoverText: "#f3eedf",
   buttonHoverText: "#f3eedf",
   infoButton: 0xe8d89f,
   infoButtonHover: 0xc49f52,
@@ -385,15 +389,15 @@ export class MainScene extends Phaser.Scene {
   }
 
   private buildNewPuzzleButton(): void {
-    const button = this.add.rectangle(125, 645, 180, 38, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const label = this.add.text(215, 664, "NEW PUZZLE", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
+    const button = this.add.rectangle(125, 645, 180, 38, COLORS.newPuzzleButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const label = this.add.text(215, 664, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
     button.on("pointerover", () => {
-      button.setFillStyle(COLORS.primaryButtonHover)
-      label.setColor(COLORS.primaryButtonHoverText)
+      button.setFillStyle(COLORS.newPuzzleButtonHover)
+      label.setColor(COLORS.newPuzzleButtonHoverText)
     })
     button.on("pointerout", () => {
-      button.setFillStyle(COLORS.primaryButton)
-      label.setColor(COLORS.primaryButtonText)
+      button.setFillStyle(COLORS.newPuzzleButton)
+      label.setColor(COLORS.newPuzzleButtonText)
     })
     button.on("pointerdown", () => {
       this.restartWithSetup(this.nextPuzzleSetup())
@@ -1382,8 +1386,8 @@ export class MainScene extends Phaser.Scene {
     const subtext = this.add.text(215, 380, "… but if you'd like to keep going", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(0.5)
     const returnButton = this.add.rectangle(70, 405, 140, 34, MainScene.INACTIVE_BUTTON_COLOR).setOrigin(0, 0).setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
     const returnLabel = this.add.text(140, 422, "RETURN TO GAME", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
-    const newPuzzleButton = this.add.rectangle(220, 405, 140, 34, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const newPuzzleLabel = this.add.text(290, 422, "NEW PUZZLE", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const newPuzzleButton = this.add.rectangle(220, 405, 140, 34, COLORS.newPuzzleButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const newPuzzleLabel = this.add.text(290, 422, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
     returnButton.on("pointerover", () => {
       returnButton.setFillStyle(MainScene.ACTIVE_BUTTON_COLOR)
     })
@@ -1396,12 +1400,12 @@ export class MainScene extends Phaser.Scene {
       this.outOfMovesOverlay = undefined
     })
     newPuzzleButton.on("pointerover", () => {
-      newPuzzleButton.setFillStyle(COLORS.primaryButtonHover)
-      newPuzzleLabel.setColor(COLORS.primaryButtonHoverText)
+      newPuzzleButton.setFillStyle(COLORS.newPuzzleButtonHover)
+      newPuzzleLabel.setColor(COLORS.newPuzzleButtonHoverText)
     })
     newPuzzleButton.on("pointerout", () => {
-      newPuzzleButton.setFillStyle(COLORS.primaryButton)
-      newPuzzleLabel.setColor(COLORS.primaryButtonText)
+      newPuzzleButton.setFillStyle(COLORS.newPuzzleButton)
+      newPuzzleLabel.setColor(COLORS.newPuzzleButtonText)
     })
     newPuzzleButton.on("pointerdown", () => {
       this.restartWithSetup(this.nextPuzzleSetup())
@@ -1439,15 +1443,15 @@ export class MainScene extends Phaser.Scene {
     const panel = this.add.rectangle(40, 265, 350, 210, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
     const title = this.add.text(215, 330, "SOLVED", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5)
     const message = this.add.text(215, 372, phrase, { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "17px", resolution: RENDER_SCALE }).setOrigin(0.5)
-    const button = this.add.rectangle(125, 415, 180, 38, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const label = this.add.text(215, 434, "NEW PUZZLE", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const button = this.add.rectangle(125, 415, 180, 38, COLORS.newPuzzleButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const label = this.add.text(215, 434, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
     button.on("pointerover", () => {
-      button.setFillStyle(COLORS.primaryButtonHover)
-      label.setColor(COLORS.primaryButtonHoverText)
+      button.setFillStyle(COLORS.newPuzzleButtonHover)
+      label.setColor(COLORS.newPuzzleButtonHoverText)
     })
     button.on("pointerout", () => {
-      button.setFillStyle(COLORS.primaryButton)
-      label.setColor(COLORS.primaryButtonText)
+      button.setFillStyle(COLORS.newPuzzleButton)
+      label.setColor(COLORS.newPuzzleButtonText)
     })
     button.on("pointerdown", () => {
       this.restartWithSetup(this.nextPuzzleSetup())
