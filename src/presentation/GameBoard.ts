@@ -117,6 +117,14 @@ export class GameBoard {
     if (!tile) return
     if (animate) this.tileRenderer.animateTileState(this.scene, tile, state)
     else renderTileState(this.tileRenderer, tile, state)
+    this.bringLettersToFront()
+  }
+
+  bringLettersToFront(): void {
+    this.tileSlots.forEach(({ text }) => {
+      text.setDepth(20)
+      text.parentContainer?.bringToTop(text)
+    })
   }
 
   updateFeedback(): void {
@@ -149,6 +157,7 @@ export class GameBoard {
           this.occupancy = [...nextOccupancy]
           const reordered = nextOccupancy.map((id) => visualsById.get(id)).filter((visual): visual is GameBoardTileVisual => visual !== undefined)
           this.tileSlots.splice(0, this.tileSlots.length, ...reordered)
+          this.bringLettersToFront()
           onComplete()
         },
       })

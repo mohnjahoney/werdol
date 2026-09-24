@@ -52,7 +52,7 @@ export class PuzzleWalkthrough {
         callback?.()
       },
     })
-    this.gameBoard.tileBackgrounds.forEach((background) => this.gameBoard.tileRenderer.renderUnmatchedTile(background))
+    this.gameBoard.tileBackgrounds.forEach((_background, slotIndex) => this.gameBoard.renderTileState(slotIndex, "unmatched"))
     this.hideLetters()
     this.playRows(0)
   }

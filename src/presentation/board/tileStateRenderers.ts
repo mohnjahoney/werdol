@@ -403,7 +403,7 @@ export class HaloTileRenderer implements TileStateRenderer {
       .setSize(outerShape.size, outerShape.size)
       .setRounded(outerShape.cornerRadius)
       .setFillStyle(tile.fillColor, HALO_OUTER_ALPHA)
-      .setDepth(tile.depth + 1)
+      .setDepth(tile.depth - 1)
       .setVisible(true)
     tile.setSize(innerShape.size, innerShape.size)
       .setRounded(innerShape.cornerRadius)
