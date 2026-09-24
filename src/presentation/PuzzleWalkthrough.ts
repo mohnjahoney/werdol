@@ -4,9 +4,8 @@ import { evaluateGuess } from "../core/evaluateGuess"
 import { findNextSwap } from "../core/minimumMoves"
 import { tilesFromOccupancy } from "../core/boardState"
 import type { WerdolPuzzle } from "../core/puzzle"
-import { BOARD_LAYOUT } from "./board/boardLayout"
 import { createTileRendererForMode, type TileRendererMode } from "./board/tileStateRenderers"
-import { TILE_COLORS, tileColor } from "./board/tileVisuals"
+import { TILE_COLORS } from "./board/tileVisuals"
 import { GameBoard } from "./GameBoard"
 
 const COLORS = { muted: "#756d5e", paper: 0xf3eedf, frame: 0x756d5e } as const
@@ -45,14 +44,13 @@ export class PuzzleWalkthrough {
     }, {
       isInteractionBlocked: () => !this.active,
       onAlreadyCompleteRow: () => undefined,
-      onSwapCommitted: () => this.gameBoard.updateFeedback(),
+      onSwapCommitted: () => this.gameBoard.updateTileMatchRendering(),
       onSwapSettled: () => {
         const callback = this.afterSwap
         this.afterSwap = undefined
         callback?.()
       },
     })
-    this.gameBoard.tileBackgrounds.forEach((_background, slotIndex) => this.gameBoard.renderTileState(slotIndex, "unmatched"))
     this.hideLetters()
     this.playRows(0)
   }
@@ -87,11 +85,12 @@ export class PuzzleWalkthrough {
         if (!this.active) return
         visual.text.setAlpha(1)
         this.schedule(300, () => {
-          const result = rowIndex === DEMO_PUZZLE.rows.length ? "correct" : row?.pattern[column] ?? "absent"
           visual.tile.letter = visual.text.text
-          const color = tileColor(result)
-          this.gameBoard.tileBackgrounds[slotIndex]?.setFillStyle(color).setStrokeStyle(BOARD_LAYOUT.tileBorderWidth, color)
-          this.gameBoard.renderTileState(slotIndex, result === "correct" ? "matched" : "unmatched", true)
+          // Evaluation color describes the guess against the target word;
+          // matched/unmatched describes whether the occupying letter belongs
+          // in this physical tile. Those are independent states. The letters
+          // have not shuffled yet, so all revealed tiles remain matched here.
+          this.gameBoard.animateEvaluationReveal(slotIndex)
         })
       })
     }
@@ -100,7 +99,7 @@ export class PuzzleWalkthrough {
 
   private shuffleLetters(): void {
     this.gameBoard.animateShuffle(this.board.occupancy, SHUFFLE_DURATION, () => {
-      this.gameBoard.updateFeedback()
+      this.gameBoard.updateTileMatchRendering()
       this.playSwap()
     })
   }

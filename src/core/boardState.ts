@@ -1,6 +1,4 @@
-import type { Letter, LetterTile } from "./board"
-import type { WerdolPuzzle } from "./puzzle"
-import { TILES_PER_ROW } from "./board"
+import type { Letter, LetterTile, Tile } from "./board"
 
 export function swapOccupancy(occupancy: readonly number[], firstSlot: number, secondSlot: number): number[] {
   const next = [...occupancy]
@@ -24,26 +22,24 @@ export function tilesFromOccupancy(occupancy: readonly number[], letters: readon
   })
 }
 
-export function isLetterCorrectAtSlot(
-  puzzle: WerdolPuzzle,
+export function letterMatchesOriginalTileLetter(
+  boardTiles: readonly Tile[],
   occupancy: readonly number[],
   letters: readonly Letter[],
   slotIndex: number,
 ): boolean {
   const letterId = occupancy[slotIndex]
   const letter = letterId === undefined ? undefined : letters[letterId]
-  const rowIndex = Math.floor(slotIndex / TILES_PER_ROW)
-  const row = puzzle.rows[rowIndex]
-  const target = rowIndex === puzzle.rows.length ? puzzle.target : row?.intendedGuess
-  return letter !== undefined && target?.[slotIndex % TILES_PER_ROW] === letter.character
+  const tile = boardTiles[slotIndex]
+  return letter !== undefined && tile?.originalLetter === letter.character
 }
 
 export function countCorrectOccupancy(
-  puzzle: WerdolPuzzle,
+  boardTiles: readonly Tile[],
   occupancy: readonly number[],
   letters: readonly Letter[],
 ): number {
   return occupancy.reduce((count, _letterId, slotIndex) => count + (
-    isLetterCorrectAtSlot(puzzle, occupancy, letters, slotIndex) ? 1 : 0
+    letterMatchesOriginalTileLetter(boardTiles, occupancy, letters, slotIndex) ? 1 : 0
   ), 0)
 }

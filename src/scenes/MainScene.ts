@@ -1,11 +1,11 @@
 import Phaser from "phaser"
 import { createScrambledBoard, type Letter, type LetterTile, type ScrambledBoard } from "../core/board"
-import { evaluateGuess, type LetterResult } from "../core/evaluateGuess"
+import { evaluateGuess } from "../core/evaluateGuess"
 import { createWerdolPuzzle, type WerdolPuzzle, type PuzzleSetup } from "../core/puzzle"
 import { countBoardTiles } from "../core/validation"
 import { benchmarkSolvers, countOptimalMoves, findNextSwap, type SolverBenchmark } from "../core/minimumMoves"
 import { countCorrectTiles, createReferencePath, type ReviewState } from "../core/reviewPath"
-import { isLetterCorrectAtSlot, tilesFromOccupancy } from "../core/boardState"
+import { letterMatchesOriginalTileLetter, tilesFromOccupancy } from "../core/boardState"
 import { createTimelineRects, DEFAULT_MAGNIFICATION_CONFIG, layoutTimelineRects, timelineScaleForStateCount, timelineWidthForStateCount, type MagnificationMode, type TimelineRect } from "../core/reviewTimeline"
 import { cardWidthForPath, createReviewCardRects, DEFAULT_REVIEW_CARD_CONFIG, focusCardIndexAtX, layoutReviewCards, type ReviewCardRect } from "../core/reviewCards"
 import { TimelineExplorer } from "../core/timelineExplorer"
@@ -567,11 +567,8 @@ export class MainScene extends Phaser.Scene {
 
       const submitAt = start + 5 * EXPLANATION_ENTRY_INTERVAL + explanationTime(180)
       for (let column = 0; column < 5; column += 1) {
-        const result: LetterResult = rowIndex === this.puzzle.rows.length
-          ? "correct"
-          : this.puzzle.rows[rowIndex]?.pattern[column] ?? "absent"
         this.time.delayedCall(submitAt + explanationTime(170) + column * explanationTime(88), () => {
-          this.flipExplanatoryTile(rowIndex * 5 + column, result)
+          this.flipExplanatoryTile(rowIndex * 5 + column)
         })
       }
     }
@@ -588,7 +585,7 @@ export class MainScene extends Phaser.Scene {
     this.time.delayedCall(targetRevealAt + explanationTime(900), () => this.shuffleExplanatoryLetters(onComplete))
   }
 
-  private flipExplanatoryTile(slotIndex: number, result: LetterResult): void {
+  private flipExplanatoryTile(slotIndex: number): void {
     const background = this.tileBackgrounds[slotIndex]
     const letterId = this.initialOccupancy[slotIndex]
     const letterVisual = this.openingLetterVisuals.get(letterId ?? -1)
@@ -599,10 +596,9 @@ export class MainScene extends Phaser.Scene {
       duration: EXPLANATION_FLIP_DURATION,
       ease: "Sine.In",
       onComplete: () => {
-        const color = tileColor(result)
-        background.setFillStyle(color).setStrokeStyle(1.5, color)
+        this.gameBoard?.updateEvaluationColor(slotIndex)
         const tileState = this.isLetterCorrectAtOccupancy(this.initialOccupancy, slotIndex) ? "matched" : "unmatched"
-        renderTileState(this.tileRenderer, background, tileState)
+        this.gameBoard?.renderTileState(slotIndex, tileState)
         this.tweens.add({
           targets: [background, letterVisual.container],
           scaleY: 1,
@@ -667,7 +663,7 @@ export class MainScene extends Phaser.Scene {
         visual.text.setText(this.letters[letterId ?? visual.tile.id]?.character ?? visual.text.text)
       })
     }
-    this.updateRowFeedback()
+    this.gameBoard?.updateTileMatchRendering()
   }
 
   private isFrozenSlot(slotIndex: number): boolean {
@@ -831,7 +827,7 @@ export class MainScene extends Phaser.Scene {
     this.tileRendererMode = mode
     devSessionState.tileRendererMode = mode
     this.tileRenderer = createTileRendererForMode(mode)
-    this.updateRowFeedback()
+    this.gameBoard?.updateTileMatchRendering()
     this.updateFeedbackModeButtons(this.feedbackModeButtons)
   }
 
@@ -1252,13 +1248,13 @@ export class MainScene extends Phaser.Scene {
       onSwapCommitted: (event) => this.handleBoardSwapCommitted(event),
       onSwapSettled: () => {
         this.swapAnimating = false
-        this.updateRowFeedback()
+        this.gameBoard?.updateTileMatchRendering()
       },
     })
     this.gameBoard.setOccupancy(startingOccupancy)
     const initialTiles = tilesFromOccupancy(this.occupancy, this.letters)
     this.playerPath = [{ tiles: initialTiles, deltaCorrect: 0, correctCount: countCorrectTiles(this.puzzle, initialTiles) }]
-    this.updateRowFeedback()
+    this.gameBoard?.updateTileMatchRendering()
     this.prepareBoardForOpening()
   }
 
@@ -1284,7 +1280,7 @@ export class MainScene extends Phaser.Scene {
     this.minimumMoves = countOptimalMoves(this.puzzle, resetTiles)
     this.gameBoard?.clearSelection()
     this.updateMoveInfo()
-    this.updateRowFeedback()
+    this.gameBoard?.updateTileMatchRendering()
   }
 
   private showAlreadyCompleteWord(rowIndex: number): void {
@@ -1453,12 +1449,8 @@ export class MainScene extends Phaser.Scene {
     completedRows.forEach((rowIndex) => celebrateCompletedRow(this, rows[rowIndex] ?? []))
   }
 
-  private isLetterCorrectAtSlot(slotIndex: number): boolean {
-    return this.isLetterCorrectAtOccupancy(this.occupancy, slotIndex)
-  }
-
   private isLetterCorrectAtOccupancy(occupancy: readonly number[], slotIndex: number): boolean {
-    return isLetterCorrectAtSlot(this.puzzle, occupancy, this.letters, slotIndex)
+    return this.gameBoard !== undefined && letterMatchesOriginalTileLetter(this.gameBoard.board.boardTiles, occupancy, this.letters, slotIndex)
   }
 
   private isRowCorrect(rowIndex: number): boolean {
@@ -1527,14 +1519,6 @@ export class MainScene extends Phaser.Scene {
         secondText.setAngle(0)
         onComplete()
       },
-    })
-  }
-
-  private updateRowFeedback(): void {
-    this.tileBackgrounds.forEach((_background, slotIndex) => {
-      const rowIndex = Math.floor(slotIndex / 5)
-      const correct = rowIndex === this.puzzle.rows.length || this.isLetterCorrectAtSlot(slotIndex)
-      this.tileRenderer.animateTileState(this, this.tileBackgrounds[slotIndex], correct ? "matched" : "unmatched")
     })
   }
 
@@ -1835,7 +1819,7 @@ export class MainScene extends Phaser.Scene {
     this.reviewOverlay?.destroy(true)
     this.reviewOverlay = undefined
     this.reviewTimeline = undefined
-    this.updateRowFeedback()
+    this.gameBoard?.updateTileMatchRendering()
   }
 
   private applyTileState(state: readonly LetterTile[]): void {

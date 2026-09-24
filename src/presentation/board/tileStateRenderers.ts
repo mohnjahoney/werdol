@@ -419,7 +419,10 @@ export class HaloTileRenderer implements TileStateRenderer {
       renderTileState(this, tile, state)
       return
     }
-    if (currentState === state) return
+    if (currentState === state) {
+      renderTileState(this, tile, state)
+      return
+    }
     this.cancelTileAnimation(tile)
     this.stateByTile.set(tile, state)
     if (state === "matched") this.animateToMatched(scene, tile)

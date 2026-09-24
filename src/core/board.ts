@@ -14,7 +14,7 @@ export interface Tile {
   row: number
   column: number
   occupyingLetterId: number
-  targetCharacter: string
+  originalLetter: string
 }
 
 export interface LetterTile {
@@ -67,12 +67,12 @@ export function createScrambledBoard(
   ]
 
   const boardTiles = boardRows.flatMap((row, rowIndex) =>
-    [...row.intendedGuess].map((targetCharacter, column) => ({
+    [...row.intendedGuess].map((originalLetter, column) => ({
       id: rowIndex * TILES_PER_ROW + column,
       row: rowIndex,
       column,
       occupyingLetterId: rowIndex * TILES_PER_ROW + column,
-      targetCharacter,
+      originalLetter,
     })),
   )
   const shuffledTiles = initialLetters === undefined ? shuffled(letters, random) : arrangeLetters(letters, initialLetters)

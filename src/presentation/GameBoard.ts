@@ -1,8 +1,8 @@
 import Phaser from "phaser"
 import type { Letter, LetterTile, ScrambledBoard } from "../core/board"
-import { countCorrectOccupancy, isLetterCorrectAtSlot, swapOccupancy } from "../core/boardState"
+import { countCorrectOccupancy, letterMatchesOriginalTileLetter, swapOccupancy } from "../core/boardState"
 import type { WerdolPuzzle } from "../core/puzzle"
-import { boardSlotCenter } from "./board/boardLayout"
+import { BOARD_LAYOUT, boardSlotCenter } from "./board/boardLayout"
 import { renderTileState, type LetterTileState, type TileStateRenderer } from "./board/tileStateRenderers"
 import { createTileLetter, GAME_PRESENTATION, tileColor } from "./board/tileVisuals"
 import { createCircularArc, mirrorCircularArc, pointOnCircularArc } from "./circularArc"
@@ -47,6 +47,7 @@ const ARC_ANIMATION_DURATION = 120
 const TRAVEL_SHADOW_DURATION = 100
 const TRAVEL_SHADOW_BLUR = 8
 const TRAVEL_SHADOW_COLOR = "rgba(33, 31, 26, 0.5)"
+const TILE_EVALUATION_FLIP_DURATION = 145
 
 /** Owns the shared Phaser objects that make up a playable or scripted board. */
 export class GameBoard {
@@ -57,6 +58,7 @@ export class GameBoard {
   private readonly visualsByLetterId = new Map<number, GameBoardTileVisual>()
   private occupancy: number[]
   private selectedSlot: number | undefined
+  private renderedSelectedSlot: number | undefined
   private swapping = false
 
   constructor(
@@ -127,11 +129,51 @@ export class GameBoard {
     })
   }
 
-  updateFeedback(): void {
-    this.tileBackgrounds.forEach((_background, slotIndex) => {
-      const rowIndex = Math.floor(slotIndex / 5)
-      const correct = rowIndex === this.puzzle.rows.length || this.isLetterCorrectAtSlot(slotIndex)
-      this.renderTileState(slotIndex, correct ? "matched" : "unmatched", true)
+  letterMatchesOriginalTileLetter(slotIndex: number): boolean {
+    return letterMatchesOriginalTileLetter(this.board.boardTiles, this.occupancy, this.board.letters, slotIndex)
+  }
+
+  lettersMatchOriginalTileLetters(): boolean[] {
+    return this.tileBackgrounds.map((_background, slotIndex) => this.letterMatchesOriginalTileLetter(slotIndex))
+  }
+
+  updateTileMatchRendering(matchStates = this.lettersMatchOriginalTileLetters()): void {
+    matchStates.forEach((matches, slotIndex) => {
+      this.renderTileState(slotIndex, matches ? "matched" : "unmatched", true)
+    })
+  }
+
+  updateEvaluationColor(slotIndex: number): void {
+    const tile = this.tileBackgrounds[slotIndex]
+    const rowIndex = Math.floor(slotIndex / 5)
+    const column = slotIndex % 5
+    const result = this.board.rows[rowIndex]?.pattern[column]
+    if (!tile || result === undefined) return
+    const color = tileColor(result)
+    tile.setFillStyle(color).setStrokeStyle(BOARD_LAYOUT.tileBorderWidth, color)
+  }
+
+  animateEvaluationReveal(slotIndex: number): void {
+    const tile = this.tileBackgrounds[slotIndex]
+    const text = this.tileSlots[slotIndex]?.text
+    if (!tile || !text) return
+
+    this.scene.tweens.add({
+      targets: [tile, text],
+      scaleY: 0.04,
+      duration: TILE_EVALUATION_FLIP_DURATION,
+      ease: "Sine.In",
+      onComplete: () => {
+        this.updateEvaluationColor(slotIndex)
+        this.renderTileState(slotIndex, "matched")
+        this.scene.tweens.add({
+          targets: [tile, text],
+          scaleY: 1,
+          duration: TILE_EVALUATION_FLIP_DURATION,
+          ease: "Back.Out",
+          onComplete: () => this.bringLettersToFront(),
+        })
+      },
     })
   }
 
@@ -228,8 +270,8 @@ export class GameBoard {
       secondSlot,
       previousOccupancy,
       nextOccupancy,
-      previousCorrectCount: countCorrectOccupancy(this.puzzle, previousOccupancy, this.board.letters),
-      nextCorrectCount: countCorrectOccupancy(this.puzzle, nextOccupancy, this.board.letters),
+      previousCorrectCount: countCorrectOccupancy(this.board.boardTiles, previousOccupancy, this.board.letters),
+      nextCorrectCount: countCorrectOccupancy(this.board.boardTiles, nextOccupancy, this.board.letters),
     }
     this.occupancy = nextOccupancy
     this.tileSlots[firstSlot] = second
@@ -250,6 +292,10 @@ export class GameBoard {
         const center = boardSlotCenter(rowIndex, column)
         const background = this.tileRenderer.createTile(this.scene, center, options.initialTileColor ?? tileColor(row.pattern[column]!))
           .setInteractive({ useHandCursor: true })
+        // A newly created tile starts in its quiet state. Matching against the
+        // occupying letter is evaluated later, when the board has established
+        // or changed its occupancy.
+        renderTileState(this.tileRenderer, background, "matched")
 
         background.on("pointerdown", () => options.onTilePointerDown(slotIndex, rowIndex, frozen))
         this.tileBackgrounds.push(background)
@@ -282,12 +328,8 @@ export class GameBoard {
     const expectedLetter = row?.intendedGuess[columnIndex]
     const current = this.tileSlots[slotIndex]
     if (expectedLetter === undefined || current === undefined || current.tile.letter === expectedLetter) return
-    const sourceSlot = this.occupancy.findIndex((letterId, index) => this.board.letters[letterId]?.character === expectedLetter && index !== slotIndex && !this.isLetterCorrectAtSlot(index))
+    const sourceSlot = this.occupancy.findIndex((letterId, index) => this.board.letters[letterId]?.character === expectedLetter && index !== slotIndex && !this.letterMatchesOriginalTileLetter(index))
     if (sourceSlot >= 0) this.swapSlots(slotIndex, sourceSlot)
-  }
-
-  private isLetterCorrectAtSlot(slotIndex: number): boolean {
-    return isLetterCorrectAtSlot(this.puzzle, this.occupancy, this.board.letters, slotIndex)
   }
 
   private isRowCorrect(rowIndex: number): boolean {
@@ -307,8 +349,15 @@ export class GameBoard {
       background.setStrokeStyle(1.5, tileColor(result))
     })
     if (animateLetters) {
-      this.tileSlots.forEach((visual, slotIndex) => this.animateLetterSelection(visual.text, slotIndex === this.selectedSlot))
+      const changedSlots = new Set<number>()
+      if (this.renderedSelectedSlot !== undefined) changedSlots.add(this.renderedSelectedSlot)
+      if (this.selectedSlot !== undefined) changedSlots.add(this.selectedSlot)
+      changedSlots.forEach((slotIndex) => {
+        const visual = this.tileSlots[slotIndex]
+        if (visual) this.animateLetterSelection(visual.text, slotIndex === this.selectedSlot)
+      })
     }
+    this.renderedSelectedSlot = this.selectedSlot
   }
 
   private animateExchange(first: GameBoardTileVisual, second: GameBoardTileVisual, firstSlot: number, secondSlot: number): void {

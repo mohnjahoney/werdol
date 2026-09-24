@@ -19,7 +19,7 @@ describe("createScrambledBoard", () => {
     expect(board.letters).toHaveLength(25)
     expect(board.initialOccupancy).toEqual(board.boardTiles.map((tile) => tile.occupyingLetterId))
     expect(board.occupancy).toHaveLength(25)
-    expect(board.boardTiles.slice(ROW_COUNT * 5).map((tile) => tile.targetCharacter).join("")).toBe(puzzle.target)
+    expect(board.boardTiles.slice(ROW_COUNT * 5).map((tile) => tile.originalLetter).join("")).toBe(puzzle.target)
     expect(scrambledLetters).toEqual(intendedLetters)
     expect(new Set(board.tiles.map((tile) => tile.id)).size).toBe(25)
   })

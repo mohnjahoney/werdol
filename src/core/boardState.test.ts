@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { createScrambledBoard } from "./board"
 import { createWerdolPuzzle } from "./puzzle"
-import { countCorrectOccupancy, isLetterCorrectAtSlot, swapOccupancy, tilesFromOccupancy } from "./boardState"
+import { countCorrectOccupancy, letterMatchesOriginalTileLetter, swapOccupancy, tilesFromOccupancy } from "./boardState"
 
 describe("board state", () => {
   it("swaps letter identities and derives the same tile model used by the game", () => {
@@ -14,9 +14,9 @@ describe("board state", () => {
     expect(next[0]).toBe(starting[1])
     expect(next[1]).toBe(starting[0])
     expect(tiles.map((tile) => tile.id)).toEqual(next)
-    expect(isLetterCorrectAtSlot(puzzle, starting, board.letters, 20)).toBe(true)
-    expect(countCorrectOccupancy(puzzle, starting, board.letters)).toBe(
-      starting.reduce((count, _letterId, slotIndex) => count + (isLetterCorrectAtSlot(puzzle, starting, board.letters, slotIndex) ? 1 : 0), 0),
+    expect(letterMatchesOriginalTileLetter(board.boardTiles, starting, board.letters, 20)).toBe(true)
+    expect(countCorrectOccupancy(board.boardTiles, starting, board.letters)).toBe(
+      starting.reduce((count, _letterId, slotIndex) => count + (letterMatchesOriginalTileLetter(board.boardTiles, starting, board.letters, slotIndex) ? 1 : 0), 0),
     )
   })
 })
