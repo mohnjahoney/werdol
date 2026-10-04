@@ -66,13 +66,6 @@ const EXTRA_MOVES = 3
 const UI_ENTRANCE_DURATION = 260
 const UI_ENTRANCE_OFFSET_Y = 12
 const UI_ENTRANCE_EASE = "Sine.Out"
-const FINISH_PHRASES = {
-  extraOne: ["Nicely rebuilt", "Sharp work", "Well restored", "Good work", "Everything’s in place", "Clean finish", "Nicely handled", "Board restored"],
-  extraTwo: ["Well reconstructed", "Strong work", "Nicely rebuilt", "Good finish", "Nearly perfect", "Well restored", "Sharp work", "Everything’s in place"],
-  extraThree: ["Great finish", "Nicely rebuilt", "You got there", "A fine reconstruction", "Good work", "Strong finish", "Well restored", "Everything’s in place"],
-  goal: ["Excellent reconstruction", "Beautifully rebuilt", "Perfectly restored", "You nailed it", "Great work", "Everything’s in place", "Exactly right", "Nicely played"],
-  underGoal: ["Brilliant reconstruction", "Exceptional work", "Beautiful work", "Masterfully rebuilt", "Outstanding", "A superb reconstruction", "That was excellent", "Everything’s in place"],
-} as const
 
 type TileVisual = GameBoardTileVisual
 
@@ -1487,16 +1480,6 @@ export class MainScene extends Phaser.Scene {
 
   private showFinishOverlay(): void {
     if (this.finishOverlay !== undefined) return
-    const phraseBank = this.movesTaken < this.minimumMoves
-      ? FINISH_PHRASES.underGoal
-      : this.movesTaken === this.minimumMoves
-        ? FINISH_PHRASES.goal
-        : this.movesTaken === this.minimumMoves + 1
-          ? FINISH_PHRASES.extraOne
-          : this.movesTaken === this.minimumMoves + 2
-            ? FINISH_PHRASES.extraTwo
-            : FINISH_PHRASES.extraThree
-    const phrase = phraseBank[Math.floor(this.wordRandom() * phraseBank.length)] ?? "Excellent solve"
     const overlay = this.add.container(0, 0).setDepth(50).setAlpha(0)
     const backdrop = this.add.rectangle(0, 0, 430, 760, 0x211f1a, 0.72).setOrigin(0, 0)
     const dismissRegion = (x: number, y: number, width: number, height: number): Phaser.GameObjects.Rectangle => {
@@ -1512,7 +1495,7 @@ export class MainScene extends Phaser.Scene {
     ]
     const panel = this.add.rectangle(40, 265, 350, 210, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
     const title = this.add.text(215, 330, "SOLVED", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5)
-    const message = this.add.text(215, 372, phrase, { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "17px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const message = this.add.text(215, 372, `You solved this WERDOL in ${this.movesTaken} moves.`, { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "17px", resolution: RENDER_SCALE }).setOrigin(0.5)
     const retryButton = this.add.rectangle(50, 415, 150, 38, COLORS.infoButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, COLORS.infoButtonHover).setInteractive({ useHandCursor: true })
     const retryLabel = this.add.text(125, 434, "BEAT YOUR SCORE", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
     const newPuzzleButton = this.add.rectangle(230, 415, 150, 38, COLORS.newPuzzleButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.ACTIVE_BUTTON_COLOR).setInteractive({ useHandCursor: true })
