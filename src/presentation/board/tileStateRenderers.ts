@@ -13,10 +13,13 @@ const NORMAL_CORNER_RADIUS = 14
 const TILE_BASE_DEPTH = 2
 export const NORMAL_TILE_SHAPE: TileShape = { size: BOARD_LAYOUT.tileSize, cornerRadius: NORMAL_CORNER_RADIUS }
 const HALO_THICKNESS = 8
+// Experiment switches: change these two values to restore the original halo
+// behavior without touching the renderer's state/animation logic.
+const HALO_MARKED_STATE: LetterTileState = "matched"
+const HALO_MIDDLE_COLOR_MODE: "light" | "darkened-tile" = "light"
 const MATCHED_TILE_SHAPE: TileShape = { size: BOARD_LAYOUT.tileSize, cornerRadius: 0 }
-const HALO_UNMATCHED_INNER_SHAPE: TileShape = { size: BOARD_LAYOUT.tileSize - 2 * HALO_THICKNESS, cornerRadius: NORMAL_CORNER_RADIUS - HALO_THICKNESS }
-const HALO_UNMATCHED_OUTER_SHAPE: TileShape = { size: BOARD_LAYOUT.tileSize, cornerRadius: NORMAL_CORNER_RADIUS }
-const HALO_OUTER_ALPHA = 0.4
+const HALO_BASE_ALPHA = 1
+const HALO_MIDDLE_ALPHA = 0.5
 const HALO_HIDDEN_ALPHA = 0
 const HALO_MATCHED_OVERSHOOT_SIZE = 12
 const HALO_MATCHED_OVERSHOOT_RADIUS = 6
@@ -301,10 +304,12 @@ export class TiltTileRenderer implements TileStateRenderer {
 
 /** The halo mode uses ordinary Phaser rounded rectangles for each unmatched tile. */
 export class HaloTileRenderer implements TileStateRenderer {
-  private readonly outerByTile = new Map<Phaser.GameObjects.Rectangle, Phaser.GameObjects.Rectangle>()
+  private readonly baseByTile = new Map<Phaser.GameObjects.Rectangle, Phaser.GameObjects.Rectangle>()
+  private readonly middleByTile = new Map<Phaser.GameObjects.Rectangle, Phaser.GameObjects.Rectangle>()
   private readonly stateByTile = new WeakMap<Phaser.GameObjects.Rectangle, LetterTileState>()
   private readonly tweensByTile = new WeakMap<Phaser.GameObjects.Rectangle, Phaser.Tweens.Tween[]>()
   private readonly revealAlphaByTile = new WeakMap<Phaser.GameObjects.Rectangle, number>()
+  private readonly outerShapeByTile = new WeakMap<Phaser.GameObjects.Rectangle, TileShape>()
 
   createTile(scene: Phaser.Scene, center: BoardPoint, fillColor: number): Phaser.GameObjects.Rectangle {
     return createRendererTile(scene, center, fillColor)
@@ -312,42 +317,54 @@ export class HaloTileRenderer implements TileStateRenderer {
 
   syncTilePosition(tile: Phaser.GameObjects.Rectangle | undefined): void {
     if (!tile) return
-    this.outerByTile.get(tile)?.setPosition(tile.x, tile.y)
+    this.baseByTile.get(tile)?.setPosition(tile.x, tile.y)
+    this.middleByTile.get(tile)?.setPosition(tile.x, tile.y)
   }
 
   syncTileRevealAlpha(tile: Phaser.GameObjects.Rectangle | undefined, alpha: number): void {
     if (!tile) return
     this.revealAlphaByTile.set(tile, alpha)
-    this.outerByTile.get(tile)?.setAlpha(alpha)
+    this.baseByTile.get(tile)?.setAlpha(alpha)
+    this.middleByTile.get(tile)?.setAlpha(alpha)
   }
 
   renderMatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void {
+    if (HALO_MARKED_STATE === "matched") return this.renderHaloTile(tile, "matched")
+    this.renderPlainTile(tile, "matched")
+  }
+
+  private renderPlainTile(tile: Phaser.GameObjects.Rectangle | undefined, state: LetterTileState): void {
     if (!tile) return
-    this.outerByTile.get(tile)?.setVisible(false)
+    const outerShape = this.outerShapeFor(tile)
+    this.baseByTile.get(tile)?.setVisible(false)
+    this.middleByTile.get(tile)?.setVisible(false)
     tile.setDepth(0)
-      .setSize(NORMAL_TILE_SHAPE.size, NORMAL_TILE_SHAPE.size)
-      .setRounded(NORMAL_TILE_SHAPE.cornerRadius)
+      .setSize(outerShape.size, outerShape.size)
+      .setRounded(outerShape.cornerRadius)
     tile.setVisible(true)
-    this.stateByTile.set(tile, "matched")
+    this.stateByTile.set(tile, state)
   }
 
   renderUnmatchedTile(tile: Phaser.GameObjects.Rectangle | undefined): void {
+    if (HALO_MARKED_STATE === "unmatched") return this.renderHaloTile(tile, "unmatched")
+    this.renderPlainTile(tile, "unmatched")
+  }
+
+  private renderHaloTile(tile: Phaser.GameObjects.Rectangle | undefined, state: LetterTileState): void {
     if (!tile) return
-    const innerShape = HALO_UNMATCHED_INNER_SHAPE
-    const outerShape = HALO_UNMATCHED_OUTER_SHAPE
-    const outer = this.outerFor(tile)
-    outer.setPosition(tile.x, tile.y)
-      .setAlpha(this.revealAlphaFor(tile))
-      .setSize(outerShape.size, outerShape.size)
-      .setRounded(outerShape.cornerRadius)
-      .setFillStyle(tile.fillColor, HALO_OUTER_ALPHA)
-      .setDepth(tile.depth - 1)
-      .setVisible(true)
-    tile.setSize(innerShape.size, innerShape.size)
-      .setRounded(innerShape.cornerRadius)
-      .setDepth(outer.depth + 1)
+    const shapes = this.shapesFor(tile)
+    const base = this.baseFor(tile)
+    const middle = this.middleFor(tile)
+    this.stackLayersBelowTile(tile, base, middle)
+    this.applyLayerShape(base, tile, { size: shapes.outer.size, radius: shapes.outer.cornerRadius, alpha: HALO_BASE_ALPHA }, tile.fillColor, tile.depth - 2)
+    this.applyLayerShape(middle, tile, { size: shapes.middle.size, radius: shapes.middle.cornerRadius, alpha: HALO_MIDDLE_ALPHA }, this.haloMiddleColor(tile), tile.depth - 1)
+    base.setVisible(true)
+    middle.setVisible(true)
+    tile.setSize(shapes.inner.size, shapes.inner.size)
+      .setRounded(shapes.inner.cornerRadius)
+      .setDepth(middle.depth + 1)
     tile.setVisible(true)
-    this.stateByTile.set(tile, "unmatched")
+    this.stateByTile.set(tile, state)
   }
 
   animateTileState(scene: Phaser.Scene, tile: Phaser.GameObjects.Rectangle | undefined, state: LetterTileState): void {
@@ -363,8 +380,8 @@ export class HaloTileRenderer implements TileStateRenderer {
     }
     this.cancelTileAnimation(tile)
     this.stateByTile.set(tile, state)
-    if (state === "matched") this.animateToMatched(scene, tile)
-    else this.animateToUnmatched(scene, tile)
+    if (state === HALO_MARKED_STATE) this.animateToUnmatched(scene, tile)
+    else this.animateToMatched(scene, tile)
   }
 
   cancelTileAnimation(tile: Phaser.GameObjects.Rectangle | undefined): void {
@@ -375,51 +392,58 @@ export class HaloTileRenderer implements TileStateRenderer {
 
   resetTileEffects(tile: Phaser.GameObjects.Rectangle | undefined): void {
     if (!tile) return
-    this.renderMatchedTile(tile)
+    this.renderPlainTile(tile, "matched")
   }
 
   destroy(): void {
-    this.outerByTile.forEach((_outer, tile) => this.cancelTileAnimation(tile))
-    this.outerByTile.forEach((outer) => outer.destroy())
-    this.outerByTile.clear()
+    this.baseByTile.forEach((_base, tile) => this.cancelTileAnimation(tile))
+    this.baseByTile.forEach((base) => base.destroy())
+    this.middleByTile.forEach((middle) => middle.destroy())
+    this.baseByTile.clear()
+    this.middleByTile.clear()
   }
 
   private animateToMatched(scene: Phaser.Scene, tile: Phaser.GameObjects.Rectangle): void {
-    const outer = this.outerFor(tile)
+    const shapes = this.shapesFor(tile)
+    const base = this.baseFor(tile)
+    const middle = this.middleFor(tile)
+    this.stackLayersBelowTile(tile, base, middle)
     const inner = { size: tile.width, radius: tile.radius }
-    const outerShape = { size: HALO_UNMATCHED_OUTER_SHAPE.size, radius: HALO_UNMATCHED_OUTER_SHAPE.cornerRadius, alpha: HALO_OUTER_ALPHA }
-    outer.setPosition(tile.x, tile.y).setVisible(true).setAlpha(this.revealAlphaFor(tile))
-    outer.setSize(outerShape.size, outerShape.size)
-      .setRounded(outerShape.radius)
-      .setFillStyle(tile.fillColor, outerShape.alpha)
+    const baseShape = { size: shapes.outer.size, radius: shapes.outer.cornerRadius, alpha: HALO_BASE_ALPHA }
+    const middleShape = { size: shapes.middle.size, radius: shapes.middle.cornerRadius, alpha: HALO_MIDDLE_ALPHA }
+    this.applyLayerShape(base, tile, baseShape, tile.fillColor, tile.depth - 2)
+    this.applyLayerShape(middle, tile, middleShape, this.haloMiddleColor(tile), tile.depth - 1)
+    base.setVisible(true)
+    middle.setVisible(true)
 
     const innerTween = scene.tweens.add({
       targets: inner,
-      size: NORMAL_TILE_SHAPE.size,
-      radius: NORMAL_TILE_SHAPE.cornerRadius,
+      size: shapes.outer.size,
+      radius: shapes.outer.cornerRadius,
       duration: HALO_MATCHED_INNER_DURATION,
       ease: "Back.InOut",
       onUpdate: () => this.applyTileShape(tile, inner.size, inner.radius),
-      onComplete: () => this.applyTileShape(tile, NORMAL_TILE_SHAPE.size, NORMAL_TILE_SHAPE.cornerRadius),
+      onComplete: () => this.applyTileShape(tile, shapes.outer.size, shapes.outer.cornerRadius),
     })
     const overshootTween = scene.tweens.add({
-      targets: outerShape,
-      size: HALO_UNMATCHED_OUTER_SHAPE.size + HALO_MATCHED_OVERSHOOT_SIZE,
-      radius: HALO_UNMATCHED_OUTER_SHAPE.cornerRadius + HALO_MATCHED_OVERSHOOT_RADIUS,
+      targets: [baseShape, middleShape],
+      size: shapes.outer.size + HALO_MATCHED_OVERSHOOT_SIZE,
+      radius: shapes.outer.cornerRadius + HALO_MATCHED_OVERSHOOT_RADIUS,
       duration: HALO_MATCHED_OVERSHOOT_DURATION,
       ease: "Back.Out",
-      onUpdate: () => this.applyOuterShape(outer, tile, outerShape),
+      onUpdate: () => this.applyHaloLayers(base, middle, tile, baseShape, middleShape),
       onComplete: () => {
         const settleTween = scene.tweens.add({
-          targets: outerShape,
-          size: HALO_UNMATCHED_OUTER_SHAPE.size,
-          radius: HALO_UNMATCHED_OUTER_SHAPE.cornerRadius,
+          targets: [baseShape, middleShape],
+          size: shapes.outer.size,
+          radius: shapes.outer.cornerRadius,
           alpha: 0,
           duration: HALO_MATCHED_SETTLE_DURATION,
           ease: "Sine.InOut",
-          onUpdate: () => this.applyOuterShape(outer, tile, outerShape),
+          onUpdate: () => this.applyHaloLayers(base, middle, tile, baseShape, middleShape),
           onComplete: () => {
-            outer.setVisible(false)
+            base.setVisible(false)
+            middle.setVisible(false)
             this.tweensByTile.delete(tile)
           },
         })
@@ -430,70 +454,142 @@ export class HaloTileRenderer implements TileStateRenderer {
   }
 
   private animateToUnmatched(scene: Phaser.Scene, tile: Phaser.GameObjects.Rectangle): void {
-    const outer = this.outerFor(tile)
+    const shapes = this.shapesFor(tile)
+    const base = this.baseFor(tile)
+    const middle = this.middleFor(tile)
+    this.stackLayersBelowTile(tile, base, middle)
     const inner = { size: tile.width, radius: tile.radius }
-    const outerShape = { size: HALO_UNMATCHED_OUTER_SHAPE.size, radius: HALO_UNMATCHED_OUTER_SHAPE.cornerRadius, alpha: HALO_HIDDEN_ALPHA }
-    outer.setPosition(tile.x, tile.y)
-      .setVisible(true)
-      .setAlpha(this.revealAlphaFor(tile))
-      .setDepth(tile.depth - 1)
-    outer.setSize(outerShape.size, outerShape.size)
-      .setRounded(outerShape.radius)
-      .setFillStyle(tile.fillColor, HALO_HIDDEN_ALPHA)
+    const baseShape = { size: shapes.outer.size, radius: shapes.outer.cornerRadius, alpha: HALO_HIDDEN_ALPHA }
+    const middleShape = { size: shapes.middle.size, radius: shapes.middle.cornerRadius, alpha: HALO_HIDDEN_ALPHA }
+    this.applyHaloLayers(base, middle, tile, baseShape, middleShape)
+    base.setVisible(true)
+    middle.setVisible(true)
     const innerTween = scene.tweens.add({
       targets: inner,
-      size: HALO_UNMATCHED_INNER_SHAPE.size,
-      radius: HALO_UNMATCHED_INNER_SHAPE.cornerRadius,
+      size: shapes.inner.size,
+      radius: shapes.inner.cornerRadius,
       duration: HALO_UNMATCHED_INNER_DURATION,
       ease: "Cubic.InOut",
       onUpdate: () => this.applyTileShape(tile, inner.size, inner.radius),
-      onComplete: () => this.applyTileShape(tile, HALO_UNMATCHED_INNER_SHAPE.size, HALO_UNMATCHED_INNER_SHAPE.cornerRadius),
+      onComplete: () => this.applyTileShape(tile, shapes.inner.size, shapes.inner.cornerRadius),
     })
-    const outerTween = scene.tweens.add({
-      targets: outerShape,
-      alpha: HALO_OUTER_ALPHA,
+    const layersTween = scene.tweens.add({
+      targets: [baseShape, middleShape],
+      alpha: (target: { size: number }) => target === baseShape ? HALO_BASE_ALPHA : HALO_MIDDLE_ALPHA,
       duration: HALO_UNMATCHED_OUTER_FADE_DURATION,
       ease: "Sine.Out",
-      onUpdate: () => this.applyOuterShape(outer, tile, outerShape),
+      onUpdate: () => this.applyHaloLayers(base, middle, tile, baseShape, middleShape),
       onComplete: () => {
-        outerShape.alpha = HALO_OUTER_ALPHA
-        this.applyOuterShape(outer, tile, outerShape)
-        outer.setVisible(true)
+        baseShape.alpha = HALO_BASE_ALPHA
+        middleShape.alpha = HALO_MIDDLE_ALPHA
+        this.applyHaloLayers(base, middle, tile, baseShape, middleShape)
+        base.setVisible(true)
+        middle.setVisible(true)
         this.tweensByTile.delete(tile)
       },
     })
-    this.tweensByTile.set(tile, [innerTween, outerTween])
+    this.tweensByTile.set(tile, [innerTween, layersTween])
   }
 
   private applyTileShape(tile: Phaser.GameObjects.Rectangle, size: number, radius: number): void {
     tile.setSize(size, size).setRounded(radius)
   }
 
-  private applyOuterShape(outer: Phaser.GameObjects.Rectangle, tile: Phaser.GameObjects.Rectangle, shape: { size: number; radius: number; alpha: number }): void {
-    outer.setPosition(tile.x, tile.y)
+  private applyHaloLayers(base: Phaser.GameObjects.Rectangle, middle: Phaser.GameObjects.Rectangle, tile: Phaser.GameObjects.Rectangle, baseShape: HaloLayerShape, middleShape: HaloLayerShape): void {
+    this.applyLayerShape(base, tile, baseShape, tile.fillColor, tile.depth - 2)
+    this.applyLayerShape(middle, tile, middleShape, this.haloMiddleColor(tile), tile.depth - 1)
+  }
+
+  private applyLayerShape(layer: Phaser.GameObjects.Rectangle, tile: Phaser.GameObjects.Rectangle, shape: HaloLayerShape, color: number, depth: number): void {
+    layer.setPosition(tile.x, tile.y)
       .setAlpha(this.revealAlphaFor(tile))
       .setSize(shape.size, shape.size)
       .setRounded(shape.radius)
-      .setFillStyle(tile.fillColor, shape.alpha)
-      .setDepth(tile.depth - 1)
+      .setFillStyle(color, shape.alpha)
+      .setDepth(depth)
   }
 
-  private outerFor(tile: Phaser.GameObjects.Rectangle): Phaser.GameObjects.Rectangle {
-    const existing = this.outerByTile.get(tile)
+  private stackLayersBelowTile(tile: Phaser.GameObjects.Rectangle, base: Phaser.GameObjects.Rectangle, middle: Phaser.GameObjects.Rectangle): void {
+    const container = tile.parentContainer
+    if (!container) return
+    container.moveBelow(middle, tile)
+    container.moveBelow(base, middle)
+  }
+
+  private baseFor(tile: Phaser.GameObjects.Rectangle): Phaser.GameObjects.Rectangle {
+    const existing = this.baseByTile.get(tile)
     if (existing) return existing
-    const outer = tile.scene.add.rectangle(tile.x, tile.y, HALO_UNMATCHED_OUTER_SHAPE.size, HALO_UNMATCHED_OUTER_SHAPE.size, tile.fillColor, HALO_OUTER_ALPHA)
+    const outer = this.outerShapeFor(tile)
+    const base = tile.scene.add.rectangle(tile.x, tile.y, outer.size, outer.size, tile.fillColor, HALO_BASE_ALPHA)
       .setOrigin(0.5)
-      .setRounded(HALO_UNMATCHED_OUTER_SHAPE.cornerRadius)
-      .setDepth(tile.depth + 1)
+      .setRounded(outer.cornerRadius)
+      .setDepth(tile.depth - 2)
       .setVisible(false)
-    if (tile.parentContainer) tile.parentContainer.add(outer)
-    this.outerByTile.set(tile, outer)
-    return outer
+    if (tile.parentContainer) tile.parentContainer.add(base)
+    this.baseByTile.set(tile, base)
+    return base
+  }
+
+  private middleFor(tile: Phaser.GameObjects.Rectangle): Phaser.GameObjects.Rectangle {
+    const existing = this.middleByTile.get(tile)
+    if (existing) return existing
+    const middle = this.shapesFor(tile).middle
+    const middleLayer = tile.scene.add.rectangle(tile.x, tile.y, middle.size, middle.size, this.haloMiddleColor(tile), HALO_MIDDLE_ALPHA)
+      .setOrigin(0.5)
+      .setRounded(middle.cornerRadius)
+      .setDepth(tile.depth - 1)
+      .setVisible(false)
+    if (tile.parentContainer) tile.parentContainer.add(middleLayer)
+    this.middleByTile.set(tile, middleLayer)
+    return middleLayer
+  }
+
+  private outerShapeFor(tile: Phaser.GameObjects.Rectangle): TileShape {
+    const existing = this.outerShapeByTile.get(tile)
+    if (existing) return existing
+    const shape = { size: tile.width, cornerRadius: tile.radius }
+    this.outerShapeByTile.set(tile, shape)
+    return shape
+  }
+
+  private shapesFor(tile: Phaser.GameObjects.Rectangle): { outer: TileShape; middle: TileShape; inner: TileShape } {
+    const outer = this.outerShapeFor(tile)
+    const inner = {
+      size: Math.max(0, outer.size - 2 * HALO_THICKNESS),
+      cornerRadius: Math.max(0, outer.cornerRadius - HALO_THICKNESS),
+    }
+    return {
+      outer,
+      inner,
+      middle: {
+        size: (inner.size + outer.size) / 2,
+        cornerRadius: (inner.cornerRadius + outer.cornerRadius) / 2,
+      },
+    }
   }
 
   private revealAlphaFor(tile: Phaser.GameObjects.Rectangle): number {
     return this.revealAlphaByTile.get(tile) ?? 1
   }
+
+  private haloMiddleColor(tile: Phaser.GameObjects.Rectangle): number {
+    if (HALO_MIDDLE_COLOR_MODE === "darkened-tile") return darkenColor(tile.fillColor)
+    return 0xffffff
+  }
+
+}
+
+function darkenColor(color: number, factor = 0.68): number {
+  const red = Math.round(((color >> 16) & 0xff) * factor)
+  const green = Math.round(((color >> 8) & 0xff) * factor)
+  const blue = Math.round((color & 0xff) * factor)
+  return (red << 16) | (green << 8) | blue
+}
+
+interface HaloLayerShape {
+  size: number
+  radius: number
+  alpha: number
 }
 
 export function createTileRendererForMode(mode: TileRendererMode): TileStateRenderer {

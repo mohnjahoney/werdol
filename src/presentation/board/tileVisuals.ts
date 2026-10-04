@@ -47,6 +47,19 @@ export const TILE_COLORS = {
   correct: 0x71845f,
 } as const
 
+export const TILE_BORDER_COLORS = {
+  absent: 0x90887a,
+  present: 0xae8b41,
+  correct: 0x5e8051,
+} as const
+
+export function tileBorderColorForTileColor(color: number): number {
+  if (color === TILE_COLORS.absent) return TILE_BORDER_COLORS.absent
+  if (color === TILE_COLORS.present) return TILE_BORDER_COLORS.present
+  if (color === TILE_COLORS.correct) return TILE_BORDER_COLORS.correct
+  return color
+}
+
 export function createTileLetter(
   scene: Phaser.Scene,
   center: BoardPoint,
@@ -86,7 +99,7 @@ export function applyTileEvaluation(
 ): void {
   if (!background || !presentation.showEvaluation) return
   const color = tileColor(result)
-  background.setFillStyle(color).setStrokeStyle(1.5, color)
+  background.setFillStyle(color).setStrokeStyle(BOARD_LAYOUT.tileBorderWidth, color)
   const state: LetterTileState = result === "correct" ? "matched" : "unmatched"
   if (animateMark) renderer.animateTileState(scene, background, state)
   else renderTileState(renderer, background, state)

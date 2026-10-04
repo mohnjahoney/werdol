@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { createScrambledBoard } from "./board"
+import { countCorrectOccupancy } from "./boardState"
 import { createWerdolPuzzle, ROW_COUNT } from "./puzzle"
 
 describe("createScrambledBoard", () => {
@@ -22,5 +23,16 @@ describe("createScrambledBoard", () => {
     expect(board.boardTiles.slice(ROW_COUNT * 5).map((tile) => tile.originalLetter).join("")).toBe(puzzle.target)
     expect(scrambledLetters).toEqual(intendedLetters)
     expect(new Set(board.tiles.map((tile) => tile.id)).size).toBe(25)
+  })
+
+  it("moves every accidentally correct starting letter to a wrong tile", () => {
+    const puzzle = createWerdolPuzzle(() => 0.25)
+    const board = createScrambledBoard(puzzle, () => 0.5)
+
+    expect(countCorrectOccupancy(
+      board.boardTiles.slice(0, ROW_COUNT * 5),
+      board.occupancy.slice(0, ROW_COUNT * 5),
+      board.letters,
+    )).toBe(0)
   })
 })

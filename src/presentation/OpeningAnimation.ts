@@ -30,6 +30,9 @@ const TITLE_END_PAUSE = 250
 const TITLE_HEADER_MOVE_DURATION = 900
 const TITLE_HEADER_MOVE_EASE = "Cubic.InOut"
 const TITLE_HEADER_SCALE_EASE = "Linear"
+const TITLE_TILE_FLIP_DURATION = 145
+const TITLE_TILE_FLIP_GAP = 90
+const TITLE_TILE_STATE_COLORS = [0x71845f, 0xaaa396, 0xc49f52] as const
 export interface OpeningAnimationOptions {
   arcRadiusMultiplier?: number
 }
@@ -38,10 +41,13 @@ export interface OpeningAnimationOptions {
 export class OpeningAnimation {
   private readonly layer: Phaser.GameObjects.Container
   private readonly timers: Phaser.Time.TimerEvent[] = []
+  private readonly arcVisuals = new Set<CircularArcVisual>()
+  private readonly counterTweens = new Set<Phaser.Tweens.Tween>()
   private title!: WerdolTitle
   private readonly titleOccupancy = [3, 2, 4, 0, 1, 5]
   private readonly arcRadiusMultiplier: number
   private finished = false
+  private destroyed = false
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -56,7 +62,15 @@ export class OpeningAnimation {
   }
 
   destroy(): void {
+    if (this.destroyed) return
+    this.destroyed = true
     this.timers.forEach((timer) => timer.remove(false))
+    this.title?.pieces.forEach((piece) => this.scene.tweens.killTweensOf(piece.display))
+    this.counterTweens.forEach((tween) => tween.stop())
+    this.counterTweens.clear()
+    this.arcVisuals.forEach((arc) => arc.destroy())
+    this.arcVisuals.clear()
+    this.title?.dispose()
     this.layer.destroy(true)
   }
 
@@ -71,7 +85,8 @@ export class OpeningAnimation {
     titleRule.lineStyle(1, 0xc6bdae, 0.9)
     titleRule.lineBetween(31, 105, 399, 105)
     this.layer.add(titleRule)
-    this.title = new WerdolTitle(this.scene, this.layer)
+    // Start plain, then acquire the halo when the opening sequence marks O.
+    this.title = new WerdolTitle(this.scene, this.layer, undefined, "unmatched")
   }
 
   private titleSlotPosition(
@@ -89,7 +104,7 @@ export class OpeningAnimation {
       const target = this.titleSlotPosition(slotIndex)
       const startY = slotIndex % 2 === 0 ? TITLE_TOP_ENTRANCE_Y : TITLE_BOTTOM_ENTRANCE_Y
       const travelDirection = startY < target.y ? 1 : -1
-      piece.display.setPosition(target.x, startY).setScale(TITLE_SPLASH_SCALE)
+      piece.display.setPosition(target.x, startY).setScale(this.title.displayScale(pieceIndex, TITLE_SPLASH_SCALE))
       this.scene.tweens.chain({
         targets: piece.display,
         delay: slotIndex * TITLE_ENTRANCE_STAGGER,
@@ -149,13 +164,14 @@ export class OpeningAnimation {
       new CircularArcVisual(this.scene, firstArc, 0xc49f52, this.layer),
       new CircularArcVisual(this.scene, secondArc, 0x71845f, this.layer),
     ]
+    arcVisuals.forEach((arc) => this.arcVisuals.add(arc))
     arcVisuals.forEach((arc) => arc.animateIn(TITLE_ARC_ANIMATION_DURATION))
     this.after(TITLE_SWAP_DURATION - TITLE_ARC_ANIMATION_DURATION, () => {
       arcVisuals.forEach((arc) => arc.animateOut(TITLE_ARC_ANIMATION_DURATION, () => arc.destroy()))
     })
     this.titleOccupancy[firstSlot] = secondPieceIndex
     this.titleOccupancy[secondSlot] = firstPieceIndex
-    this.scene.tweens.addCounter({
+    const swapTween = this.scene.tweens.addCounter({
       from: 0,
       to: 1,
       duration: TITLE_SWAP_DURATION,
@@ -173,15 +189,55 @@ export class OpeningAnimation {
         secondPiece.display.setPosition(secondTarget.x, TITLE_SPLASH_Y)
       },
     })
+    this.counterTweens.add(swapTween)
+    swapTween.once(Phaser.Tweens.Events.TWEEN_COMPLETE, () => this.counterTweens.delete(swapTween))
   }
 
   private scheduleAnimation(): void {
     this.animateTitleEntrance()
     const entranceDuration = TITLE_ENTRANCE_DURATION + 5 * TITLE_ENTRANCE_STAGGER
     this.after(entranceDuration + TITLE_ENTRANCE_PAUSE, () => {
-      const titleDuration = this.scheduleTitleSequence()
-      this.after(titleDuration + TITLE_END_PAUSE, () => this.animateTitleToHeader())
+      this.animateTitleTile(() => {
+        const titleDuration = this.scheduleTitleSequence()
+        this.after(titleDuration + TITLE_END_PAUSE, () => this.animateTitleToHeader())
+      })
     })
+  }
+
+  private animateTitleTile(onComplete: () => void): void {
+    let flipIndex = 0
+    const flip = (): void => {
+      const tile = this.title.pieces.find((piece) => piece.character === "O")?.display
+      if (!tile) {
+        onComplete()
+        return
+      }
+      this.scene.tweens.add({
+        targets: tile,
+        scaleX: 0.04,
+        duration: TITLE_TILE_FLIP_DURATION,
+        ease: "Sine.In",
+        onComplete: () => {
+          this.title.setTitleTileColor(TITLE_TILE_STATE_COLORS[flipIndex] ?? 0xc49f52)
+          this.scene.tweens.add({
+            targets: tile,
+            scaleX: this.title.displayScale(4, TITLE_SPLASH_SCALE),
+            duration: TITLE_TILE_FLIP_DURATION,
+            ease: "Back.Out",
+            onComplete: () => {
+              flipIndex += 1
+              if (flipIndex < TITLE_TILE_STATE_COLORS.length) {
+                this.after(TITLE_TILE_FLIP_GAP, flip)
+              } else {
+                this.title.animateTitleTileState(this.scene, "matched")
+                this.after(700, onComplete)
+              }
+            },
+          })
+        },
+      })
+    }
+    flip()
   }
 
   private animateTitleToHeader(): void {
@@ -196,6 +252,7 @@ export class OpeningAnimation {
         y: target.y,
         duration: TITLE_HEADER_MOVE_DURATION,
         ease: TITLE_HEADER_MOVE_EASE,
+        scale: this.title.displayScale(pieceIndex),
         onComplete: () => {
           remaining -= 1
           if (remaining === 0) {

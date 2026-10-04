@@ -19,6 +19,7 @@ import { createTileRendererForMode, renderTileState, type TileRendererMode, type
 import { createTileLetter, REVIEW_PRESENTATION, TILE_COLORS, tileColor } from "../presentation/board/tileVisuals"
 import { celebrateCompletedPuzzle, celebrateCompletedRow } from "../presentation/celebrations"
 import { addWerdolHeader } from "../presentation/WerdolHeader"
+import type { WerdolTitle } from "../presentation/WerdolTitle"
 import { createCircularArc, mirrorCircularArc, pointOnCircularArc } from "../presentation/circularArc"
 import { CircularArcVisual } from "../presentation/circularArcVisual"
 import { PuzzleWalkthrough } from "../presentation/PuzzleWalkthrough"
@@ -35,8 +36,8 @@ const COLORS = {
   primaryButtonHover: 0x71845f,
   primaryButtonText: "#211f1a",
   primaryButtonHoverText: "#f3eedf",
-  newPuzzleButton: 0xb6c99c,
-  newPuzzleButtonHover: 0x71845f,
+  newPuzzleButton: 0xc49f52,
+  newPuzzleButtonHover: 0x98762f,
   newPuzzleButtonText: "#211f1a",
   newPuzzleButtonHoverText: "#f3eedf",
   buttonHoverText: "#f3eedf",
@@ -126,10 +127,13 @@ export class MainScene extends Phaser.Scene {
   private boardWarmupPending = false
   private openingShuffleOccupancy?: number[]
   private openingAnimation?: OpeningAnimation
+  private headerTitle?: WerdolTitle
   private openingSkipInProgress = false
   private deferredUiObjects: Phaser.GameObjects.GameObject[] = []
   private moveBarBricks: Phaser.GameObjects.Rectangle[] = []
   private moveBarMinimumMarker!: Phaser.GameObjects.Rectangle
+  private moveCountText?: Phaser.GameObjects.Text
+  private goalCountText?: Phaser.GameObjects.Text
   private outOfMovesOverlay?: Phaser.GameObjects.Container
   private finishOverlay?: Phaser.GameObjects.Container
   private howToPlayOverlay!: Phaser.GameObjects.Container
@@ -270,6 +274,7 @@ export class MainScene extends Phaser.Scene {
     this.modeLabelAnimating = false
     this.interactionMode = devSessionState.interactionMode
     this.magnificationMode = devSessionState.magnificationMode
+    this.tileRenderer = this.createTileRenderer(this.tileRendererMode)
     this.requireTargetLetterInEachRow = data.requireTargetLetterInEachRow ?? false
     this.requireGreenTileInEachRow = data.requireGreenTileInEachRow ?? false
     this.minGreenTiles = clampTileMinimum(data.minGreenTiles ?? 4)
@@ -313,15 +318,19 @@ export class MainScene extends Phaser.Scene {
       this.openingAnimation = new OpeningAnimation(this, () => this.finishOpeningAnimation(), { arcRadiusMultiplier: devSessionState.titleArcRadiusMultiplier })
       this.input.once("pointerdown", this.skipOpeningAnimation, this)
     }
-    const header = addWerdolHeader(this)
+    const header = addWerdolHeader(this, undefined, "matched")
+    this.headerTitle = header
+    const rendererTrigger = header.pieces.find((piece) => piece.character === "O")?.display
+    const rendererTile = rendererTrigger instanceof Phaser.GameObjects.Container
+      ? rendererTrigger.getAt(0)
+      : rendererTrigger
+    if (rendererTile instanceof Phaser.GameObjects.Rectangle) {
+      rendererTile.setInteractive({ useHandCursor: true })
+      rendererTile.on("pointerover", () => rendererTrigger?.setScale(header.displayScale(4, 1.08)))
+      rendererTile.on("pointerout", () => rendererTrigger?.setScale(header.displayScale(4)))
+      rendererTile.on("pointerdown", () => this.setTileRendererPanelVisible(!this.tileRendererPanel.visible))
+    }
     if (this.isDeveloperUrl()) {
-      const rendererTrigger = header.pieces.find((piece) => piece.character === "O")?.display
-      if (rendererTrigger instanceof Phaser.GameObjects.Rectangle) {
-        rendererTrigger.setInteractive({ useHandCursor: true })
-        rendererTrigger.on("pointerover", () => rendererTrigger.setScale(1.08))
-        rendererTrigger.on("pointerout", () => rendererTrigger.setScale(1))
-        rendererTrigger.on("pointerdown", () => this.setTileRendererPanelVisible(!this.tileRendererPanel.visible))
-      }
       const devButton = this.add.circle(410, 18, 8, COLORS.button, 0.92)
         .setStrokeStyle(1.5, COLORS.mutedNumeric)
         .setInteractive({ useHandCursor: true })
@@ -366,6 +375,10 @@ export class MainScene extends Phaser.Scene {
     return new URLSearchParams(window.location.search).get("dev") === "1"
   }
 
+  private createTileRenderer(mode: TileRendererMode): TileStateRenderer {
+    return createTileRendererForMode(mode)
+  }
+
   private markOpeningSeen(): void {
     try {
       window.sessionStorage.setItem(OPENING_SEEN_KEY, "true")
@@ -389,8 +402,12 @@ export class MainScene extends Phaser.Scene {
   }
 
   private buildNewPuzzleButton(): void {
-    const button = this.add.rectangle(125, 645, 180, 38, COLORS.newPuzzleButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const label = this.add.text(215, 664, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
+    const button = this.add.rectangle(117, 626, 196, 42, COLORS.newPuzzleButton)
+      .setOrigin(0, 0)
+      .setRounded(8)
+      .setStrokeStyle(1.5, MainScene.ACTIVE_BUTTON_COLOR)
+      .setInteractive({ useHandCursor: true })
+    const label = this.add.text(215, 647, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.8, resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
     button.on("pointerover", () => {
       button.setFillStyle(COLORS.newPuzzleButtonHover)
       label.setColor(COLORS.newPuzzleButtonHoverText)
@@ -406,8 +423,12 @@ export class MainScene extends Phaser.Scene {
   }
 
   private buildHowToPlay(): void {
-    const infoButton = this.add.circle(330, 664, 11, COLORS.infoButton).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const infoLabel = this.add.text(330, 664, "i", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "16px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
+    const infoButton = this.add.rectangle(366, 549, 24, 24, COLORS.infoButton)
+      .setOrigin(0.5)
+      .setRounded(7)
+      .setStrokeStyle(1.5, COLORS.infoButtonHover)
+      .setInteractive({ useHandCursor: true })
+    const infoLabel = this.add.text(366, 549, "?", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
     infoButton.on("pointerover", () => {
       infoButton.setFillStyle(COLORS.infoButtonHover)
       infoLabel.setColor(COLORS.buttonHoverText)
@@ -421,9 +442,9 @@ export class MainScene extends Phaser.Scene {
     const backdrop = this.add.rectangle(0, 0, 430, 760, 0x211f1a, 0.18).setOrigin(0, 0).setInteractive()
     const panel = this.add.rectangle(25, 150, 380, 550, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
     const title = this.add.text(50, 192, "HOW TO PLAY", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "13px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE })
-    const instructions = this.add.text(50, 230, "WERDOL begins where Wordle ends...\n\nA Wordle game has been played and completed.\n\nHowever!..\n\nThe letters in the first four rows have been mixed up, but the colors stayed in place.\n\nTap two letters to swap. Tiles become square when they receive the right letter. Rebuild the four rows in as few moves as possible.\n\nGreen is correct, yellow is misplaced, and gray is absent.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", lineSpacing: 5, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
-    const walkthroughButton = this.add.rectangle(50, 600, 330, 36, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const walkthroughLabel = this.add.text(215, 618, "SEE HOW IT WORKS", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "11px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const instructions = this.add.text(50, 230, "WERDOL begins where WORDLE ends...\n\nImagine that a WORDLE game has been played and completed after 5 guesses. We see the resulting gameboard here.\n\nEach tile is colored with green, yellow, and gray meaning 'correct', 'misplaced', and 'unnecessary'.\n\nHowever...the letters in the first four rows are mixed up, while keeping the colors in place.\n\nCHALLENGE: recreate those 4 word guesses in as few moves as possible.\n\nTap two letters to swap. Tiles change when they receive the right letter.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", lineSpacing: 5, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
+    const walkthroughButton = this.add.rectangle(50, 630, 330, 36, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const walkthroughLabel = this.add.text(215, 648, "WATCH A DEMO", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "11px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setOrigin(0.5)
     walkthroughButton.on("pointerover", () => {
       walkthroughButton.setFillStyle(COLORS.primaryButtonHover)
       walkthroughLabel.setColor(COLORS.primaryButtonHoverText)
@@ -441,61 +462,81 @@ export class MainScene extends Phaser.Scene {
     backdrop.on("pointerdown", () => this.howToPlayOverlay.setVisible(false))
     this.queueUiEntrance([infoButton, infoLabel])
 
-    const sayHello = this.add.text(215, 720, "say hello", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+    const sayHello = this.add.text(375, 720, "say hello", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(1, 0.5)
+    const sayHelloUnderline = this.add.rectangle(375, 730, sayHello.width, 1, COLORS.mutedNumeric, 0.5).setOrigin(1, 0.5)
+    const sayHelloHitArea = this.add.zone(321, 720, 108, 32).setInteractive({ useHandCursor: true })
+    const updateSayHelloUnderline = () => sayHelloUnderline.setDisplaySize(sayHello.displayWidth, 1)
     let feedbackTimer: Phaser.Time.TimerEvent | undefined
-    sayHello.on("pointerover", () => {
+    sayHelloHitArea.on("pointerover", () => {
       this.tweens.killTweensOf(sayHello)
+      this.tweens.killTweensOf(sayHelloUnderline)
       sayHello.setColor(COLORS.ink).setShadow(0, 2, "#c49f52", 0.42, false, false)
-      this.tweens.add({ targets: sayHello, y: 716, scale: 1.1, duration: 140, ease: "Back.Out" })
+      sayHelloUnderline.setFillStyle(COLORS.infoButtonHover).setAlpha(0.95)
+      this.tweens.add({ targets: sayHello, y: 716, scale: 1.06, duration: 140, ease: "Back.Out" })
+      this.tweens.add({ targets: sayHelloUnderline, y: 726, scaleX: 1.06, duration: 140, ease: "Back.Out" })
     })
-    sayHello.on("pointerout", () => {
+    sayHelloHitArea.on("pointerout", () => {
       this.tweens.killTweensOf(sayHello)
+      this.tweens.killTweensOf(sayHelloUnderline)
       sayHello.setColor(COLORS.muted).setShadow(0, 0, "#000000", 0, false, false)
+      sayHelloUnderline.setFillStyle(COLORS.mutedNumeric).setAlpha(0.5)
       this.tweens.add({ targets: sayHello, y: 720, scale: 1, duration: 120, ease: "Sine.Out" })
+      this.tweens.add({ targets: sayHelloUnderline, y: 730, scaleX: 1, duration: 120, ease: "Sine.Out" })
     })
-    sayHello.on("pointerdown", async () => {
+    sayHelloHitArea.on("pointerdown", async () => {
       try {
         await navigator.clipboard.writeText("mohnjahoney@gmail.com")
         sayHello.setText("email copied").setColor(COLORS.ink)
+        updateSayHelloUnderline()
         feedbackTimer?.remove()
-        feedbackTimer = this.time.delayedCall(1600, () => sayHello.setText("say hello").setColor(COLORS.muted))
+        feedbackTimer = this.time.delayedCall(1600, () => {
+          sayHello.setText("say hello").setColor(COLORS.muted)
+          updateSayHelloUnderline()
+        })
       } catch {
         sayHello.setText("copy unavailable").setColor(COLORS.muted)
+        updateSayHelloUnderline()
         feedbackTimer?.remove()
-        feedbackTimer = this.time.delayedCall(1600, () => sayHello.setText("say hello"))
+        feedbackTimer = this.time.delayedCall(1600, () => {
+          sayHello.setText("say hello")
+          updateSayHelloUnderline()
+        })
       }
     })
-    this.queueUiEntrance([sayHello])
+    this.queueUiEntrance([sayHello, sayHelloUnderline])
   }
 
   private buildMoveInfo(): void {
-    const boxLeft = 55
-    const boxTop = 535
-    const boxWidth = 320
-    const boxHeight = 78
+    const ruleLeft = 47
+    const ruleWidth = 336
+    const ruleY = 512
+    const statusTop = 539
     const barLeft = 82
     const barWidth = 266
-    const barY = boxTop + 47
+    const barY = statusTop + 37
     const totalBricks = this.minimumMoves + EXTRA_MOVES
     const brickGap = 3
     const brickWidth = (barWidth - brickGap * (totalBricks - 1)) / totalBricks
     const goalPosition = barLeft + this.minimumMoves * (brickWidth + brickGap) - (this.minimumMoves > 0 ? brickGap / 2 : 0)
     const objects: Phaser.GameObjects.GameObject[] = []
-    objects.push(this.add.rectangle(boxLeft, boxTop, boxWidth, boxHeight, 0xfffdf7).setOrigin(0, 0).setStrokeStyle(1, 0xc6bdae))
-    objects.push(this.add.text(barLeft, boxTop + 18, "MOVES", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0, 0.5))
-    objects.push(this.add.text(goalPosition, boxTop + 18, "GOAL", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5, 0.5))
+    objects.push(this.add.rectangle(ruleLeft, ruleY, ruleWidth, 1, 0xc6bdae, 0.85).setOrigin(0, 0.5))
+    this.moveCountText = this.add.text(barLeft, statusTop + 2, String(this.movesTaken), { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0, 0.5)
+    this.goalCountText = this.add.text(goalPosition, statusTop + 2, String(this.minimumMoves), { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const moveLabel = this.add.text(barLeft, statusTop + 17, "MOVES", { color: COLORS.muted, fontFamily: "Arial, sans-serif", fontSize: "8px", fontStyle: "bold", letterSpacing: 1.1, resolution: RENDER_SCALE }).setOrigin(0, 0.5)
+    const goalLabel = this.add.text(goalPosition, statusTop + 17, "GOAL", { color: COLORS.muted, fontFamily: "Arial, sans-serif", fontSize: "8px", fontStyle: "bold", letterSpacing: 1.1, resolution: RENDER_SCALE }).setOrigin(0.5)
+    objects.push(this.moveCountText, this.goalCountText, moveLabel, goalLabel)
     this.moveBarBricks = Array.from({ length: totalBricks }, (_value, index) => {
       const x = barLeft + index * (brickWidth + brickGap)
       const color = index < this.minimumMoves ? 0xb7c0ae : 0xd8b7b0
-      const brick = this.add.rectangle(x, barY, brickWidth, 10, color).setOrigin(0, 0.5)
+      const brick = this.add.rectangle(x, barY, brickWidth, 12, color).setOrigin(0, 0.5).setRounded(Math.min(3, brickWidth / 2))
       objects.push(brick)
       return brick
     })
-    this.moveBarMinimumMarker = this.add.rectangle(goalPosition, barY, 2, 22, MainScene.BUTTON_STROKE_COLOR).setOrigin(0.5)
+    this.moveBarMinimumMarker = this.add.rectangle(goalPosition, barY - 11, 2, 6, MainScene.BUTTON_STROKE_COLOR).setOrigin(0.5)
     objects.push(this.moveBarMinimumMarker)
     if (this.challengingTestPattern) {
       const benchmark = this.challengeBenchmark
-      objects.push(this.add.text(215, boxTop + 62, `LEGACY GREEDY ${benchmark?.greedyMoves ?? "—"} MOVES · ${benchmark?.greedyMilliseconds.toFixed(2) ?? "—"} MS`, {
+      objects.push(this.add.text(215, statusTop + 52, `LEGACY GREEDY ${benchmark?.greedyMoves ?? "—"} MOVES · ${benchmark?.greedyMilliseconds.toFixed(2) ?? "—"} MS`, {
         color: COLORS.muted,
         fontFamily: "Arial, sans-serif",
         fontSize: "9px",
@@ -503,7 +544,7 @@ export class MainScene extends Phaser.Scene {
         letterSpacing: 0.4,
         resolution: RENDER_SCALE,
       }).setOrigin(0.5, 0.5))
-      objects.push(this.add.text(215, boxTop + 73, `OPTIMAL ${benchmark?.optimalMoves ?? this.minimumMoves} MOVES · ${benchmark?.optimalMilliseconds.toFixed(2) ?? "—"} MS`, {
+      objects.push(this.add.text(215, statusTop + 63, `OPTIMAL ${benchmark?.optimalMoves ?? this.minimumMoves} MOVES · ${benchmark?.optimalMilliseconds.toFixed(2) ?? "—"} MS`, {
         color: COLORS.muted,
         fontFamily: "Arial, sans-serif",
         fontSize: "9px",
@@ -670,7 +711,7 @@ export class MainScene extends Phaser.Scene {
 
   private commitOpeningShuffle(nextOccupancy = this.openingShuffleOccupancy ?? this.occupancy): void {
     this.releaseOpeningLetterVisuals(nextOccupancy)
-    this.setOccupancy(nextOccupancy)
+    this.setOccupancy(nextOccupancy, false, false)
     const shuffledTiles = tilesFromOccupancy(this.occupancy, this.letters)
     this.playerPath = [{ tiles: shuffledTiles, deltaCorrect: 0, correctCount: countCorrectTiles(this.puzzle, shuffledTiles) }]
     this.movesTaken = 0
@@ -687,7 +728,7 @@ export class MainScene extends Phaser.Scene {
     this.openingLetterVisuals.clear()
   }
 
-  private setOccupancy(nextOccupancy: readonly number[], syncLetters = false): void {
+  private setOccupancy(nextOccupancy: readonly number[], syncLetters = false, animateTileStates = true): void {
     this.gameBoard?.setOccupancy(nextOccupancy, syncLetters)
     if (syncLetters) {
       this.tileSlots.forEach((visual, slotIndex) => {
@@ -695,7 +736,8 @@ export class MainScene extends Phaser.Scene {
         visual.text.setText(this.letters[letterId ?? visual.tile.id]?.character ?? visual.text.text)
       })
     }
-    this.gameBoard?.updateTileMatchRendering()
+    this.gameBoard?.updateTileMatchRendering(undefined, animateTileStates)
+    this.headerTitle?.resetTitleTile("matched")
   }
 
   private isFrozenSlot(slotIndex: number): boolean {
@@ -764,7 +806,12 @@ export class MainScene extends Phaser.Scene {
       const text = this.tileSlots[slotIndex]?.text
       const letterId = this.occupancy[slotIndex]
       text?.setPosition(center.x, center.y).setText(this.letters[letterId ?? 0]?.character ?? "").setAlpha(1)
+      // The opening board starts with empty placeholder tiles so the splash
+      // can reveal their evaluation colors one by one. A skipped splash has
+      // no flips to perform, so restore the normal board colors directly.
+      this.gameBoard?.updateEvaluationColor(slotIndex)
     })
+    this.gameBoard?.updateTileMatchRendering(undefined, false)
   }
 
   private skipOpeningAnimation(): void {
@@ -780,6 +827,8 @@ export class MainScene extends Phaser.Scene {
 
   private updateMoveInfo(): void {
     if (!this.moveBarMinimumMarker) return
+    this.moveCountText?.setText(String(this.movesTaken))
+    this.goalCountText?.setText(String(this.minimumMoves))
     this.moveBarBricks.forEach((brick, index) => {
       const isGoalBrick = index < this.minimumMoves
       const isFilled = index < this.movesTaken
@@ -861,13 +910,18 @@ export class MainScene extends Phaser.Scene {
 
   private setTileRendererMode(mode: TileRendererMode): void {
     if (mode === this.tileRendererMode) return
-    this.tileBackgrounds.forEach((tile) => this.tileRenderer.resetTileEffects(tile))
-    this.tileRenderer.destroy()
     this.tileRendererMode = mode
     devSessionState.tileRendererMode = mode
-    this.tileRenderer = createTileRendererForMode(mode)
-    this.gameBoard?.updateTileMatchRendering()
+    this.refreshTileRenderer()
     this.updateFeedbackModeButtons(this.feedbackModeButtons)
+  }
+
+  private refreshTileRenderer(): void {
+    this.tileBackgrounds.forEach((tile) => this.tileRenderer.resetTileEffects(tile))
+    this.tileRenderer.destroy()
+    this.tileRenderer = this.createTileRenderer(this.tileRendererMode)
+    this.gameBoard?.setTileRenderer(this.tileRenderer)
+    if (!this.openingExplanationPending) this.gameBoard?.updateTileMatchRendering()
   }
 
   private setTileRendererPanelVisible(visible: boolean): void {
@@ -1293,7 +1347,7 @@ export class MainScene extends Phaser.Scene {
     this.gameBoard.setOccupancy(startingOccupancy)
     const initialTiles = tilesFromOccupancy(this.occupancy, this.letters)
     this.playerPath = [{ tiles: initialTiles, deltaCorrect: 0, correctCount: countCorrectTiles(this.puzzle, initialTiles) }]
-    this.gameBoard?.updateTileMatchRendering()
+    if (!this.openingExplanationPending) this.gameBoard?.updateTileMatchRendering()
     this.prepareBoardForOpening()
   }
 
@@ -1348,6 +1402,7 @@ export class MainScene extends Phaser.Scene {
       .filter((rowIndex) => !previouslyCorrect[rowIndex] && this.isRowCorrect(rowIndex))
     if (!this.puzzleEndedTracked && this.puzzle.rows.every((_row, rowIndex) => this.isRowCorrect(rowIndex))) {
       this.puzzleEndedTracked = true
+      this.headerTitle?.animateTitleTileState(this, "matched")
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.playCompletionCelebration(newlyCompletedRows, true))
       trackWerdolEvent("werdol:puzzle_ended", {
         puzzleId: this.puzzleId,
@@ -1380,24 +1435,39 @@ export class MainScene extends Phaser.Scene {
     if (this.outOfMovesOverlay !== undefined) return
     const overlay = this.add.container(0, 0).setDepth(50).setAlpha(0)
     const backdrop = this.add.rectangle(0, 0, 430, 760, 0x211f1a, 0.72).setOrigin(0, 0).setInteractive()
-    const panel = this.add.rectangle(40, 265, 350, 210, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
-    const title = this.add.text(215, 310, "OUT OF MOVES", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5)
-    const message = this.add.text(215, 355, "The puzzle is still unsolved.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "16px", resolution: RENDER_SCALE }).setOrigin(0.5)
-    const subtext = this.add.text(215, 380, "… but if you'd like to keep going", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(0.5)
-    const returnButton = this.add.rectangle(70, 405, 140, 34, MainScene.INACTIVE_BUTTON_COLOR).setOrigin(0, 0).setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const returnLabel = this.add.text(140, 422, "RETURN TO GAME", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
-    const newPuzzleButton = this.add.rectangle(220, 405, 140, 34, COLORS.newPuzzleButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const newPuzzleLabel = this.add.text(290, 422, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
-    returnButton.on("pointerover", () => {
-      returnButton.setFillStyle(MainScene.ACTIVE_BUTTON_COLOR)
+    const panel = this.add.rectangle(40, 248, 350, 264, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
+    const title = this.add.text(215, 282, "OUT OF MOVES", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const message = this.add.text(215, 317, "The puzzle is still unsolved.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "16px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const subtext = this.add.text(215, 340, "What would you like to do?", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const keepTryingButton = this.add.rectangle(70, 360, 290, 36, 0xf3eedf).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const keepTryingLabel = this.add.text(215, 378, "KEEP TRYING", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.8, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const restartButton = this.add.rectangle(70, 410, 140, 42, COLORS.infoButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, COLORS.infoButtonHover).setInteractive({ useHandCursor: true })
+    const restartLabel = this.add.text(140, 431, "START AGAIN", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const newPuzzleButton = this.add.rectangle(220, 410, 140, 42, COLORS.newPuzzleButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.ACTIVE_BUTTON_COLOR).setInteractive({ useHandCursor: true })
+    const newPuzzleLabel = this.add.text(290, 431, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
+    keepTryingButton.on("pointerover", () => {
+      keepTryingButton.setFillStyle(COLORS.button)
     })
-    returnButton.on("pointerout", () => {
-      returnButton.setFillStyle(MainScene.INACTIVE_BUTTON_COLOR)
+    keepTryingButton.on("pointerout", () => {
+      keepTryingButton.setFillStyle(0xf3eedf)
     })
-    returnButton.on("pointerdown", () => {
+    keepTryingButton.on("pointerdown", () => {
       this.outOfMovesDismissed = true
       overlay.setVisible(false)
       this.outOfMovesOverlay = undefined
+    })
+    restartButton.on("pointerover", () => {
+      restartButton.setFillStyle(COLORS.infoButtonHover)
+      restartLabel.setColor(COLORS.buttonHoverText)
+    })
+    restartButton.on("pointerout", () => {
+      restartButton.setFillStyle(COLORS.infoButton)
+      restartLabel.setColor(COLORS.ink)
+    })
+    restartButton.on("pointerdown", () => {
+      overlay.setVisible(false)
+      this.outOfMovesOverlay = undefined
+      this.resetPuzzle()
     })
     newPuzzleButton.on("pointerover", () => {
       newPuzzleButton.setFillStyle(COLORS.newPuzzleButtonHover)
@@ -1410,7 +1480,7 @@ export class MainScene extends Phaser.Scene {
     newPuzzleButton.on("pointerdown", () => {
       this.restartWithSetup(this.nextPuzzleSetup())
     })
-    overlay.add([backdrop, panel, title, message, subtext, returnButton, returnLabel, newPuzzleButton, newPuzzleLabel])
+    overlay.add([backdrop, panel, title, message, subtext, keepTryingButton, keepTryingLabel, restartButton, restartLabel, newPuzzleButton, newPuzzleLabel])
     this.outOfMovesOverlay = overlay
     this.tweens.add({ targets: overlay, alpha: 1, duration: UI_ENTRANCE_DURATION, ease: UI_ENTRANCE_EASE })
   }
@@ -1443,20 +1513,33 @@ export class MainScene extends Phaser.Scene {
     const panel = this.add.rectangle(40, 265, 350, 210, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
     const title = this.add.text(215, 330, "SOLVED", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE }).setOrigin(0.5)
     const message = this.add.text(215, 372, phrase, { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "17px", resolution: RENDER_SCALE }).setOrigin(0.5)
-    const button = this.add.rectangle(125, 415, 180, 38, COLORS.newPuzzleButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const label = this.add.text(215, 434, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
-    button.on("pointerover", () => {
-      button.setFillStyle(COLORS.newPuzzleButtonHover)
-      label.setColor(COLORS.newPuzzleButtonHoverText)
+    const retryButton = this.add.rectangle(50, 415, 150, 38, COLORS.infoButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, COLORS.infoButtonHover).setInteractive({ useHandCursor: true })
+    const retryLabel = this.add.text(125, 434, "BEAT YOUR SCORE", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const newPuzzleButton = this.add.rectangle(230, 415, 150, 38, COLORS.newPuzzleButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.ACTIVE_BUTTON_COLOR).setInteractive({ useHandCursor: true })
+    const newPuzzleLabel = this.add.text(305, 434, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
+    retryButton.on("pointerover", () => {
+      retryButton.setFillStyle(COLORS.infoButtonHover)
+      retryLabel.setColor(COLORS.buttonHoverText)
     })
-    button.on("pointerout", () => {
-      button.setFillStyle(COLORS.newPuzzleButton)
-      label.setColor(COLORS.newPuzzleButtonText)
+    retryButton.on("pointerout", () => {
+      retryButton.setFillStyle(COLORS.infoButton)
+      retryLabel.setColor(COLORS.ink)
     })
-    button.on("pointerdown", () => {
+    retryButton.on("pointerdown", () => {
+      this.restartWithSetup(this.currentPuzzleSetup())
+    })
+    newPuzzleButton.on("pointerover", () => {
+      newPuzzleButton.setFillStyle(COLORS.newPuzzleButtonHover)
+      newPuzzleLabel.setColor(COLORS.newPuzzleButtonHoverText)
+    })
+    newPuzzleButton.on("pointerout", () => {
+      newPuzzleButton.setFillStyle(COLORS.newPuzzleButton)
+      newPuzzleLabel.setColor(COLORS.newPuzzleButtonText)
+    })
+    newPuzzleButton.on("pointerdown", () => {
       this.restartWithSetup(this.nextPuzzleSetup())
     })
-    overlay.add([backdrop, ...dismissRegions, panel, title, message, button, label])
+    overlay.add([backdrop, ...dismissRegions, panel, title, message, retryButton, retryLabel, newPuzzleButton, newPuzzleLabel])
     this.finishOverlay = overlay
     this.tweens.add({ targets: overlay, alpha: 1, duration: UI_ENTRANCE_DURATION, ease: UI_ENTRANCE_EASE })
   }

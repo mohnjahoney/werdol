@@ -22,7 +22,22 @@ function expectedCharacter(puzzle: WerdolPuzzle, slotIndex: number): string | un
 }
 
 export function findNextSwap(puzzle: WerdolPuzzle, tiles: readonly LetterTile[]): ProposedSwap | undefined {
+  return findNextSwapFromSlot(puzzle, tiles, 0)
+}
+
+/**
+ * Finds a greedy improving swap, but rotates the scan order from a random
+ * tile so equally good choices do not always produce the same path.
+ */
+export function findNextSwapRandomize(puzzle: WerdolPuzzle, tiles: readonly LetterTile[], random: () => number = Math.random): ProposedSwap | undefined {
   const totalSlots = (puzzle.rows.length + 1) * TILES_PER_ROW
+  const startSlot = Math.max(0, Math.min(totalSlots - 1, Math.floor(random() * totalSlots)))
+  return findNextSwapFromSlot(puzzle, tiles, startSlot)
+}
+
+function findNextSwapFromSlot(puzzle: WerdolPuzzle, tiles: readonly LetterTile[], startSlot: number): ProposedSwap | undefined {
+  const totalSlots = (puzzle.rows.length + 1) * TILES_PER_ROW
+  const slotOrder = Array.from({ length: totalSlots }, (_value, offset) => (startSlot + offset) % totalSlots)
   const correct = (slotIndex: number): boolean => {
     const tile = tiles[slotIndex]
     return tile !== undefined && tile.letter === expectedCharacter(puzzle, slotIndex)
@@ -30,9 +45,11 @@ export function findNextSwap(puzzle: WerdolPuzzle, tiles: readonly LetterTile[])
   const correctCount = (): number => tiles.reduce((count, _tile, slotIndex) => count + (correct(slotIndex) ? 1 : 0), 0)
   const currentCorrect = correctCount()
 
-  for (let firstSlot = 0; firstSlot < totalSlots; firstSlot += 1) {
+  for (let firstIndex = 0; firstIndex < totalSlots; firstIndex += 1) {
+    const firstSlot = slotOrder[firstIndex]!
     if (correct(firstSlot)) continue
-    for (let secondSlot = firstSlot + 1; secondSlot < totalSlots; secondSlot += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < totalSlots; secondIndex += 1) {
+      const secondSlot = slotOrder[secondIndex]!
       if (correct(secondSlot)) continue
       const firstTile = tiles[firstSlot]
       const secondTile = tiles[secondSlot]
@@ -49,11 +66,11 @@ export function findNextSwap(puzzle: WerdolPuzzle, tiles: readonly LetterTile[])
     }
   }
 
-  const firstSlot = Array.from({ length: totalSlots }, (_value, slotIndex) => slotIndex).find((slotIndex) => !correct(slotIndex))
+  const firstSlot = slotOrder.find((slotIndex) => !correct(slotIndex))
   if (firstSlot === undefined) return undefined
   const expectedLetter = expectedCharacter(puzzle, firstSlot)
   if (expectedLetter === undefined) return undefined
-  const secondSlot = Array.from({ length: totalSlots }, (_value, slotIndex) => slotIndex).find(
+  const secondSlot = slotOrder.find(
     (slotIndex) => slotIndex !== firstSlot && !correct(slotIndex) && tiles[slotIndex]?.letter === expectedLetter,
   )
   if (secondSlot === undefined) return undefined

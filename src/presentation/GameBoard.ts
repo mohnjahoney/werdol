@@ -4,7 +4,7 @@ import { countCorrectOccupancy, letterMatchesOriginalTileLetter, swapOccupancy }
 import type { WerdolPuzzle } from "../core/puzzle"
 import { BOARD_LAYOUT, boardSlotCenter } from "./board/boardLayout"
 import { renderTileState, type LetterTileState, type TileStateRenderer } from "./board/tileStateRenderers"
-import { createTileLetter, GAME_PRESENTATION, tileColor } from "./board/tileVisuals"
+import { createTileLetter, GAME_PRESENTATION, tileBorderColorForTileColor, tileColor } from "./board/tileVisuals"
 import { createCircularArc, mirrorCircularArc, pointOnCircularArc } from "./circularArc"
 import { CircularArcVisual } from "./circularArcVisual"
 import { LetterVisual } from "./LetterVisual"
@@ -54,12 +54,15 @@ export class GameBoard {
   readonly tileSlots: GameBoardTileVisual[] = []
   readonly tileBackgrounds: Phaser.GameObjects.Rectangle[] = []
   readonly openingLetterVisuals = new Map<number, LetterVisual>()
-  readonly tileRenderer: TileStateRenderer
+  tileRenderer: TileStateRenderer
   private readonly visualsByLetterId = new Map<number, GameBoardTileVisual>()
   private occupancy: number[]
   private selectedSlot: number | undefined
   private renderedSelectedSlot: number | undefined
   private swapping = false
+  private destroyed = false
+  private readonly delayedCalls = new Set<Phaser.Time.TimerEvent>()
+  private readonly swapArcs = new Set<CircularArcVisual>()
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -117,6 +120,7 @@ export class GameBoard {
   renderTileState(slotIndex: number, state: LetterTileState, animate = false): void {
     const tile = this.tileBackgrounds[slotIndex]
     if (!tile) return
+    tile.setStrokeStyle(state === "unmatched" ? 1 : 0, tileBorderColorForTileColor(tile.fillColor))
     if (animate) this.tileRenderer.animateTileState(this.scene, tile, state)
     else renderTileState(this.tileRenderer, tile, state)
     this.bringLettersToFront()
@@ -128,6 +132,10 @@ export class GameBoard {
 
   syncTileRevealAlpha(slotIndex: number, alpha: number): void {
     this.tileRenderer.syncTileRevealAlpha?.(this.tileBackgrounds[slotIndex], alpha)
+  }
+
+  setTileRenderer(tileRenderer: TileStateRenderer): void {
+    this.tileRenderer = tileRenderer
   }
 
   bringLettersToFront(): void {
@@ -145,9 +153,9 @@ export class GameBoard {
     return this.tileBackgrounds.map((_background, slotIndex) => this.letterMatchesOriginalTileLetter(slotIndex))
   }
 
-  updateTileMatchRendering(matchStates = this.lettersMatchOriginalTileLetters()): void {
+  updateTileMatchRendering(matchStates = this.lettersMatchOriginalTileLetters(), animate = true): void {
     matchStates.forEach((matches, slotIndex) => {
-      this.renderTileState(slotIndex, matches ? "matched" : "unmatched", true)
+      this.renderTileState(slotIndex, matches ? "matched" : "unmatched", animate)
     })
   }
 
@@ -162,6 +170,7 @@ export class GameBoard {
   }
 
   animateEvaluationReveal(slotIndex: number): void {
+    if (this.destroyed) return
     const tile = this.tileBackgrounds[slotIndex]
     const text = this.tileSlots[slotIndex]?.text
     if (!tile || !text) return
@@ -172,6 +181,7 @@ export class GameBoard {
       duration: TILE_EVALUATION_FLIP_DURATION,
       ease: "Sine.In",
       onComplete: () => {
+        if (this.destroyed) return
         this.updateEvaluationColor(slotIndex)
         this.renderTileState(slotIndex, "matched")
         this.scene.tweens.add({
@@ -179,13 +189,16 @@ export class GameBoard {
           scaleY: 1,
           duration: TILE_EVALUATION_FLIP_DURATION,
           ease: "Back.Out",
-          onComplete: () => this.bringLettersToFront(),
+          onComplete: () => {
+            if (!this.destroyed) this.bringLettersToFront()
+          },
         })
       },
     })
   }
 
   animateShuffle(nextOccupancy: readonly number[], duration: number, onComplete: () => void): void {
+    if (this.destroyed) return
     const visualsById = this.visualsByLetterId
     const currentOccupancy = [...this.occupancy]
     let moving = 0
@@ -202,6 +215,7 @@ export class GameBoard {
         duration,
         ease: "Cubic.InOut",
         onComplete: () => {
+          if (this.destroyed) return
           moving -= 1
           if (moving > 0) return
           this.occupancy = [...nextOccupancy]
@@ -219,6 +233,12 @@ export class GameBoard {
   }
 
   destroy(): void {
+    if (this.destroyed) return
+    this.destroyed = true
+    this.delayedCalls.forEach((timer) => timer.remove())
+    this.delayedCalls.clear()
+    this.swapArcs.forEach((arc) => arc.destroy())
+    this.swapArcs.clear()
     this.tileBackgrounds.forEach((tile) => {
       this.tileRenderer.cancelTileAnimation(tile)
       this.scene.tweens.killTweensOf(tile)
@@ -233,7 +253,7 @@ export class GameBoard {
   }
 
   selectTile(slotIndex: number, mode: GameBoardInteractionMode): void {
-    if (this.swapping || this.callbacks.isInteractionBlocked()) return
+    if (this.destroyed || this.swapping || this.callbacks.isInteractionBlocked()) return
     const rowIndex = Math.floor(slotIndex / 5)
     if (this.isRowCorrect(rowIndex)) {
       this.selectedSlot = undefined
@@ -263,10 +283,11 @@ export class GameBoard {
     this.swapping = true
     this.updateSelection(false)
     this.animateLetterSelection(second.text, true)
-    this.scene.time.delayedCall(SWAP_SELECTION_DELAY, () => this.swapSlots(firstSlot, slotIndex))
+    this.schedule(SWAP_SELECTION_DELAY, () => this.swapSlots(firstSlot, slotIndex))
   }
 
   swapSlots(firstSlot: number, secondSlot: number): void {
+    if (this.destroyed) return
     if (this.swapping && this.selectedSlot !== undefined) return
     const first = this.tileSlots[firstSlot]
     const second = this.tileSlots[secondSlot]
@@ -303,7 +324,7 @@ export class GameBoard {
         // A newly created tile starts in its quiet state. Matching against the
         // occupying letter is evaluated later, when the board has established
         // or changed its occupancy.
-        renderTileState(this.tileRenderer, background, "matched")
+        renderTileState(this.tileRenderer, background, "unmatched")
 
         background.on("pointerdown", () => options.onTilePointerDown(slotIndex, rowIndex, frozen))
         this.tileBackgrounds.push(background)
@@ -351,11 +372,6 @@ export class GameBoard {
   }
 
   private updateSelection(animateLetters = true): void {
-    this.tileBackgrounds.forEach((background, slotIndex) => {
-      const row = this.board.rows[Math.floor(slotIndex / 5)]
-      const result = row?.pattern[slotIndex % 5] ?? "absent"
-      background.setStrokeStyle(1.5, tileColor(result))
-    })
     if (animateLetters) {
       const changedSlots = new Set<number>()
       if (this.renderedSelectedSlot !== undefined) changedSlots.add(this.renderedSelectedSlot)
@@ -375,14 +391,22 @@ export class GameBoard {
     const firstArc = createCircularArc(startFirst, startSecond, Math.max(distance * 0.5, distance * 0.5), Math.random() < 0.5 ? -1 : 1, true)
     const secondArc = mirrorCircularArc(firstArc, startFirst, startSecond)
     const arcs = [new CircularArcVisual(this.scene, firstArc, 0xc49f52), new CircularArcVisual(this.scene, secondArc, 0x71845f)]
+    arcs.forEach((arc) => this.swapArcs.add(arc))
     arcs.forEach((arc) => { arc.setDepth(SWAP_ARC_DEPTH); arc.animateIn(ARC_ANIMATION_DURATION) })
-    this.scene.time.delayedCall(TILE_SWAP_ANIMATION_DURATION - ARC_ANIMATION_DURATION, () => arcs.forEach((arc) => arc.animateOut(ARC_ANIMATION_DURATION, () => arc.destroy())))
+    this.schedule(TILE_SWAP_ANIMATION_DURATION - ARC_ANIMATION_DURATION, () => {
+      if (this.destroyed) return
+      arcs.forEach((arc) => arc.animateOut(ARC_ANIMATION_DURATION, () => {
+        this.swapArcs.delete(arc)
+        arc.destroy()
+      }))
+    })
     this.scene.tweens.addCounter({
       from: 0,
       to: 1,
       duration: TILE_SWAP_ANIMATION_DURATION,
       ease: "Sine.easeInOut",
       onUpdate: (tween) => {
+        if (this.destroyed) return
         const progress = tween.getValue() ?? 0
         const firstPoint = pointOnCircularArc(firstArc, progress)
         const secondPoint = pointOnCircularArc(secondArc, progress)
@@ -390,6 +414,7 @@ export class GameBoard {
         second.text.setPosition(secondPoint.x, secondPoint.y).setDepth(10).setAngle(30)
       },
       onComplete: () => {
+        if (this.destroyed) return
         first.text.setPosition(startSecond.x, startSecond.y)
         second.text.setPosition(startFirst.x, startFirst.y)
         let remaining = 2
@@ -407,26 +432,52 @@ export class GameBoard {
   }
 
   private animateLetterSelection(text: Phaser.GameObjects.Text, selected: boolean): void {
+    if (this.destroyed) return
     this.scene.tweens.add({ targets: text, angle: selected ? 30 : 0, duration: TRAVEL_SHADOW_DURATION, ease: "Sine.easeInOut" })
     this.scene.tweens.addCounter({
       from: selected ? 0 : TRAVEL_SHADOW_BLUR,
       to: selected ? TRAVEL_SHADOW_BLUR : 0,
       duration: TRAVEL_SHADOW_DURATION,
       ease: "Sine.easeInOut",
-      onUpdate: (tween) => text.setShadow(1, 1, TRAVEL_SHADOW_COLOR, tween.getValue() ?? 0, true, true),
-      onComplete: () => { if (!selected) text.setShadow(0, 0, TRAVEL_SHADOW_COLOR, 0, false, false) },
+      onUpdate: (tween) => {
+        if (!this.destroyed) text.setShadow(1, 1, TRAVEL_SHADOW_COLOR, tween.getValue() ?? 0, true, true)
+      },
+      onComplete: () => {
+        if (!this.destroyed && !selected) text.setShadow(0, 0, TRAVEL_SHADOW_COLOR, 0, false, false)
+      },
     })
   }
 
   private animateLetterToRest(text: Phaser.GameObjects.Text, onComplete: () => void): void {
-    this.scene.tweens.add({ targets: text, angle: 0, duration: TRAVEL_SHADOW_DURATION, ease: "Sine.easeInOut", onComplete })
+    if (this.destroyed) return
+    this.scene.tweens.add({
+      targets: text,
+      angle: 0,
+      duration: TRAVEL_SHADOW_DURATION,
+      ease: "Sine.easeInOut",
+      onComplete: () => {
+        if (!this.destroyed) onComplete()
+      },
+    })
     this.scene.tweens.addCounter({
       from: TRAVEL_SHADOW_BLUR,
       to: 0,
       duration: TRAVEL_SHADOW_DURATION,
       ease: "Sine.easeInOut",
-      onUpdate: (tween) => text.setShadow(1, 1, TRAVEL_SHADOW_COLOR, tween.getValue() ?? 0, true, true),
-      onComplete: () => text.setShadow(0, 0, TRAVEL_SHADOW_COLOR, 0, false, false),
+      onUpdate: (tween) => {
+        if (!this.destroyed) text.setShadow(1, 1, TRAVEL_SHADOW_COLOR, tween.getValue() ?? 0, true, true)
+      },
+      onComplete: () => {
+        if (!this.destroyed) text.setShadow(0, 0, TRAVEL_SHADOW_COLOR, 0, false, false)
+      },
     })
+  }
+
+  private schedule(delay: number, callback: () => void): void {
+    const timer = this.scene.time.delayedCall(delay, () => {
+      this.delayedCalls.delete(timer)
+      if (!this.destroyed) callback()
+    })
+    this.delayedCalls.add(timer)
   }
 }

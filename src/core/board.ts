@@ -76,6 +76,7 @@ export function createScrambledBoard(
     })),
   )
   const shuffledTiles = initialLetters === undefined ? shuffled(letters, random) : arrangeLetters(letters, initialLetters)
+  removeAccidentallyCorrectLetters(shuffledTiles, boardTiles, random)
   const initialOccupancy = boardTiles.map((tile) => tile.occupyingLetterId)
   const occupancy = [...shuffledTiles.map((letter) => letter.id), ...targetLetters.map((letter) => letter.id)]
   const initialTiles: LetterTile[] = allLetters.map((letter) => ({
@@ -124,4 +125,44 @@ function shuffled<T>(items: readonly T[], random: () => number): T[] {
     result[swapIndex] = current as T
   }
   return result
+}
+
+function removeAccidentallyCorrectLetters(letters: Letter[], boardTiles: readonly Tile[], random: () => number): void {
+  const slotCount = letters.length
+  const start = Math.max(0, Math.min(slotCount - 1, Math.floor(random() * slotCount)))
+  let scanStart = start
+
+  for (let swaps = 0; swaps < 100; swaps += 1) {
+    const correctSlot = findNextSlot(slotCount, scanStart, (slotIndex) => (
+      letters[slotIndex]?.character === boardTiles[slotIndex]?.originalLetter
+    ))
+    if (correctSlot === undefined) return
+
+    const correctLetter = letters[correctSlot]
+    if (correctLetter === undefined) return
+    const swapSlot = findNextSlot(slotCount, (correctSlot + 1) % slotCount, (slotIndex) => {
+      if (slotIndex === correctSlot) return false
+      const candidate = letters[slotIndex]
+      const correctTile = boardTiles[correctSlot]
+      const candidateTile = boardTiles[slotIndex]
+      return candidate !== undefined && correctTile !== undefined && candidateTile !== undefined
+        && candidate.character !== correctTile.originalLetter
+        && correctLetter.character !== candidateTile.originalLetter
+    })
+    if (swapSlot === undefined) return
+
+    const replacement = letters[swapSlot]
+    if (replacement === undefined) return
+    letters[correctSlot] = replacement
+    letters[swapSlot] = correctLetter
+    scanStart = (correctSlot + 1) % slotCount
+  }
+}
+
+function findNextSlot(slotCount: number, start: number, predicate: (slotIndex: number) => boolean): number | undefined {
+  for (let offset = 0; offset < slotCount; offset += 1) {
+    const slotIndex = (start + offset) % slotCount
+    if (predicate(slotIndex)) return slotIndex
+  }
+  return undefined
 }

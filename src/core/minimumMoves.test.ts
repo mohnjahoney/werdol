@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { countGreedyMoves, countOptimalMoves, findNextSwap } from "./minimumMoves"
+import { countGreedyMoves, countOptimalMoves, findNextSwap, findNextSwapRandomize } from "./minimumMoves"
 import type { WerdolPuzzle } from "./puzzle"
 import type { LetterTile } from "./board"
 
@@ -27,6 +27,16 @@ describe("findNextSwap", () => {
 
   it("returns no move for a solved board", () => {
     expect(findNextSwap(puzzle, tiles("SLATE"))).toBeUndefined()
+  })
+})
+
+describe("findNextSwapRandomize", () => {
+  it("uses the same greedy rule from a supplied randomized starting slot", () => {
+    expect(findNextSwapRandomize(puzzle, tiles("ELATS"), () => 0)).toEqual({ firstSlot: 0, secondSlot: 4, improvement: 2 })
+  })
+
+  it("returns no move for a solved board", () => {
+    expect(findNextSwapRandomize(puzzle, tiles("SLATE"), () => 0.6)).toBeUndefined()
   })
 })
 
