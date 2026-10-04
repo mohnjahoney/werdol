@@ -71,6 +71,7 @@ type TileVisual = GameBoardTileVisual
 
 interface SceneData extends PuzzleSetup {
   challengingTestPattern?: boolean
+  personalBestMoves?: number
 }
 type InteractionMode = "swap" | "reveal"
 type WordListMode = "easy" | "hard"
@@ -109,6 +110,7 @@ export class MainScene extends Phaser.Scene {
   private swapAnimating = false
   private movesTaken = 0
   private minimumMoves = 0
+  private personalBestMoves?: number
   private outOfMovesDismissed = false
   private challengeBenchmark?: SolverBenchmark
   private puzzleCreationFailed = false
@@ -125,6 +127,7 @@ export class MainScene extends Phaser.Scene {
   private deferredUiObjects: Phaser.GameObjects.GameObject[] = []
   private moveBarBricks: Phaser.GameObjects.Rectangle[] = []
   private moveBarMinimumMarker!: Phaser.GameObjects.Rectangle
+  private moveBarBestMarker?: Phaser.GameObjects.Rectangle
   private moveCountText?: Phaser.GameObjects.Text
   private goalCountText?: Phaser.GameObjects.Text
   private outOfMovesOverlay?: Phaser.GameObjects.Container
@@ -237,6 +240,7 @@ export class MainScene extends Phaser.Scene {
     this.swapAnimating = false
     this.movesTaken = 0
     this.minimumMoves = 0
+    this.personalBestMoves = data.personalBestMoves
     this.outOfMovesDismissed = false
     this.challengeBenchmark = undefined
     this.playerPath = []
@@ -264,6 +268,7 @@ export class MainScene extends Phaser.Scene {
     this.openingSkipInProgress = false
     this.deferredUiObjects = []
     this.moveBarBricks = []
+    this.moveBarBestMarker = undefined
     this.modeLabelAnimating = false
     this.interactionMode = devSessionState.interactionMode
     this.magnificationMode = devSessionState.magnificationMode
@@ -507,10 +512,12 @@ export class MainScene extends Phaser.Scene {
     const barLeft = 82
     const barWidth = 266
     const barY = statusTop + 37
-    const totalBricks = this.minimumMoves + EXTRA_MOVES
+    const bestMoves = this.personalBestMoves ?? this.minimumMoves
+    const totalBricks = Math.max(this.minimumMoves, bestMoves) + EXTRA_MOVES
     const brickGap = 3
     const brickWidth = (barWidth - brickGap * (totalBricks - 1)) / totalBricks
     const goalPosition = barLeft + this.minimumMoves * (brickWidth + brickGap) - (this.minimumMoves > 0 ? brickGap / 2 : 0)
+    const bestPosition = barLeft + bestMoves * (brickWidth + brickGap) - (bestMoves > 0 ? brickGap / 2 : 0)
     const objects: Phaser.GameObjects.GameObject[] = []
     objects.push(this.add.rectangle(ruleLeft, ruleY, ruleWidth, 1, 0xc6bdae, 0.85).setOrigin(0, 0.5))
     this.moveCountText = this.add.text(barLeft, statusTop + 2, String(this.movesTaken), { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0, 0.5)
@@ -518,9 +525,17 @@ export class MainScene extends Phaser.Scene {
     const moveLabel = this.add.text(barLeft, statusTop + 17, "MOVES", { color: COLORS.muted, fontFamily: "Arial, sans-serif", fontSize: "8px", fontStyle: "bold", letterSpacing: 1.1, resolution: RENDER_SCALE }).setOrigin(0, 0.5)
     const goalLabel = this.add.text(goalPosition, statusTop + 17, "GOAL", { color: COLORS.muted, fontFamily: "Arial, sans-serif", fontSize: "8px", fontStyle: "bold", letterSpacing: 1.1, resolution: RENDER_SCALE }).setOrigin(0.5)
     objects.push(this.moveCountText, this.goalCountText, moveLabel, goalLabel)
+    if (this.personalBestMoves !== undefined && this.personalBestMoves > this.minimumMoves) {
+      const bestCountText = this.add.text(bestPosition, statusTop + 2, String(this.personalBestMoves), { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "18px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
+      const bestLabel = this.add.text(bestPosition, statusTop + 17, "BEST", { color: COLORS.muted, fontFamily: "Arial, sans-serif", fontSize: "8px", fontStyle: "bold", letterSpacing: 1.1, resolution: RENDER_SCALE }).setOrigin(0.5)
+      this.moveBarBestMarker = this.add.rectangle(bestPosition, barY - 11, 2, 6, MainScene.BUTTON_STROKE_COLOR).setOrigin(0.5)
+      objects.push(bestCountText, bestLabel, this.moveBarBestMarker)
+    }
     this.moveBarBricks = Array.from({ length: totalBricks }, (_value, index) => {
       const x = barLeft + index * (brickWidth + brickGap)
-      const color = index < this.minimumMoves ? 0xb7c0ae : 0xd8b7b0
+      const color = index < this.minimumMoves
+        ? 0xb7c0ae
+        : index < bestMoves && this.personalBestMoves !== undefined ? 0xd9c78f : 0xd8b7b0
       const brick = this.add.rectangle(x, barY, brickWidth, 12, color).setOrigin(0, 0.5).setRounded(Math.min(3, brickWidth / 2))
       objects.push(brick)
       return brick
@@ -822,12 +837,18 @@ export class MainScene extends Phaser.Scene {
     if (!this.moveBarMinimumMarker) return
     this.moveCountText?.setText(String(this.movesTaken))
     this.goalCountText?.setText(String(this.minimumMoves))
+    const bestMoves = this.personalBestMoves ?? this.minimumMoves
     this.moveBarBricks.forEach((brick, index) => {
       const isGoalBrick = index < this.minimumMoves
+      const isBestBrick = index < bestMoves
       const isFilled = index < this.movesTaken
       brick.setFillStyle(isFilled
-        ? (isGoalBrick ? MainScene.ACTIVE_BUTTON_COLOR : 0xb06a5f)
-        : (isGoalBrick ? 0xb7c0ae : 0xd8b7b0))
+        ? (isGoalBrick
+          ? MainScene.ACTIVE_BUTTON_COLOR
+          : isBestBrick && this.personalBestMoves !== undefined ? 0xc49f52 : 0xb06a5f)
+        : (isGoalBrick
+          ? 0xb7c0ae
+          : isBestBrick && this.personalBestMoves !== undefined ? 0xd9c78f : 0xd8b7b0))
     })
   }
 
@@ -1277,12 +1298,14 @@ export class MainScene extends Phaser.Scene {
       wordListMode: this.wordListMode,
       challengingTestPattern: this.challengingTestPattern,
       seed: this.seed,
+      personalBestMoves: this.personalBestMoves,
     }
   }
 
   private nextPuzzleSetup(): SceneData {
     return {
       ...this.currentPuzzleSetup(),
+      personalBestMoves: undefined,
       seed: nextPuzzleSeed(
         this.seed,
         this.wordListMode === "easy" ? ANSWER_WORDS.length : ALLOWED_WORDS.length,
@@ -1407,7 +1430,7 @@ export class MainScene extends Phaser.Scene {
         minimumMoves: this.minimumMoves,
         elapsedMs: Math.max(0, Math.round(performance.now() - this.puzzleStartedAt)),
       })
-    } else if (!this.outOfMovesDismissed && this.movesTaken >= this.minimumMoves + EXTRA_MOVES) {
+    } else if (!this.outOfMovesDismissed && this.movesTaken >= Math.max(this.minimumMoves, this.personalBestMoves ?? this.minimumMoves) + EXTRA_MOVES) {
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.showOutOfMoves())
       trackWerdolEvent("werdol:puzzle_ended", {
         puzzleId: this.puzzleId,
@@ -1509,7 +1532,10 @@ export class MainScene extends Phaser.Scene {
       retryLabel.setColor(COLORS.ink)
     })
     retryButton.on("pointerdown", () => {
-      this.restartWithSetup(this.currentPuzzleSetup())
+      this.restartWithSetup({
+        ...this.currentPuzzleSetup(),
+        personalBestMoves: Math.min(this.personalBestMoves ?? Number.POSITIVE_INFINITY, this.movesTaken),
+      })
     })
     newPuzzleButton.on("pointerover", () => {
       newPuzzleButton.setFillStyle(COLORS.newPuzzleButtonHover)

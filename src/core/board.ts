@@ -5,8 +5,6 @@ export const TILES_PER_ROW = 5
 export interface Letter {
   id: number
   character: string
-  sourceRow: number
-  sourceColumn: number
 }
 
 export interface Tile {
@@ -20,8 +18,6 @@ export interface Tile {
 export interface LetterTile {
   id: number
   letter: string
-  sourceRow: number
-  sourceColumn: number
 }
 
 export interface ScrambledBoard {
@@ -44,20 +40,16 @@ export function createScrambledBoard(
     throw new Error(`Werdol boards must contain exactly ${ROW_COUNT} rows`)
   }
 
-  const letters = puzzle.rows.flatMap((row, sourceRow) =>
-    [...row.intendedGuess].map((letter, sourceColumn) => ({
-      id: sourceRow * TILES_PER_ROW + sourceColumn,
+  const letters = puzzle.rows.flatMap((row, rowIndex) =>
+    [...row.intendedGuess].map((letter, column) => ({
+      id: rowIndex * TILES_PER_ROW + column,
       character: letter,
-      sourceRow,
-      sourceColumn,
     })),
   )
 
-  const targetLetters = [...puzzle.target].map((letter, sourceColumn) => ({
-    id: ROW_COUNT * TILES_PER_ROW + sourceColumn,
+  const targetLetters = [...puzzle.target].map((letter, column) => ({
+    id: ROW_COUNT * TILES_PER_ROW + column,
     character: letter,
-    sourceRow: ROW_COUNT,
-    sourceColumn,
   }))
   const allLetters = [...letters, ...targetLetters]
 
@@ -82,8 +74,6 @@ export function createScrambledBoard(
   const initialTiles: LetterTile[] = allLetters.map((letter) => ({
     id: letter.id,
     letter: letter.character,
-    sourceRow: letter.sourceRow,
-    sourceColumn: letter.sourceColumn,
   }))
 
   return {
@@ -96,8 +86,6 @@ export function createScrambledBoard(
     tiles: [...shuffledTiles, ...targetLetters].map((letter) => ({
       id: letter.id,
       letter: letter.character,
-      sourceRow: letter.sourceRow,
-      sourceColumn: letter.sourceColumn,
     })),
     frozenRows: [ROW_COUNT],
   }

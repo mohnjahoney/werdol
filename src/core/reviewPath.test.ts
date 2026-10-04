@@ -9,7 +9,7 @@ const puzzle: WerdolPuzzle = {
 }
 
 function tiles(letters: string): LetterTile[] {
-  return [...letters].map((letter, id) => ({ id, letter, sourceRow: 0, sourceColumn: id }))
+  return [...letters].map((letter, id) => ({ id, letter }))
 }
 
 describe("createReferencePath", () => {

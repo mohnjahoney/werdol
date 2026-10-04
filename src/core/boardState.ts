@@ -16,8 +16,6 @@ export function tilesFromOccupancy(occupancy: readonly number[], letters: readon
     return letter === undefined ? [] : [{
       id: letter.id,
       letter: letter.character,
-      sourceRow: letter.sourceRow,
-      sourceColumn: letter.sourceColumn,
     }]
   })
 }
