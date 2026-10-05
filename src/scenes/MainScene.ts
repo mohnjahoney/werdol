@@ -105,6 +105,7 @@ export class MainScene extends Phaser.Scene {
   private puzzle!: WerdolPuzzle
   private letters: Letter[] = []
   private initialOccupancy: number[] = []
+  private scrambledOccupancy: number[] = []
   private initialTileIds: number[] = []
   private swapDirection = 1
   private swapAnimating = false
@@ -236,6 +237,7 @@ export class MainScene extends Phaser.Scene {
     configureLogicalCamera(this)
     this.letters = []
     this.initialOccupancy = []
+    this.scrambledOccupancy = []
     this.initialTileIds = []
     this.swapAnimating = false
     this.movesTaken = 0
@@ -1337,6 +1339,7 @@ export class MainScene extends Phaser.Scene {
 
   private buildBoard(): void {
     const board = this.preparedBoard ?? createScrambledBoard(this.puzzle, this.letterRandom, this.challengingTestPattern ? CHALLENGE_INITIAL_LETTERS : undefined)
+    this.scrambledOccupancy = [...board.occupancy]
     this.preparedBoard = undefined
     this.letters = board.letters
     this.initialOccupancy = [...board.initialOccupancy]
@@ -1381,7 +1384,7 @@ export class MainScene extends Phaser.Scene {
       const center = this.slotCenter(slotIndex)
       visual.text.setPosition(center.x, center.y).setDepth(10)
     })
-    this.setOccupancy(this.initialOccupancy, true)
+    this.setOccupancy(this.scrambledOccupancy, true)
     this.movesTaken = 0
     this.outOfMovesDismissed = false
     const resetTiles = tilesFromOccupancy(this.occupancy, this.letters)
