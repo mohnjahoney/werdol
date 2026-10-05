@@ -2,6 +2,7 @@ import { evaluateGuess, type LetterResult } from "./evaluateGuess"
 import { ALLOWED_WORDS, ANSWER_WORDS } from "./words"
 
 export const ROW_COUNT = 4
+export const MAX_LETTER_COPIES = 6
 
 export interface WerdolRow {
   intendedGuess: string
@@ -35,6 +36,7 @@ export function createWerdolPuzzle(random = Math.random, setup: PuzzleSetup = {}
     const result = createRows(target, guessWords, random, setup)
     wordsConsidered += result.wordsConsidered + 1
     if (result.rows === undefined) continue
+    if (exceedsLetterCap(result.rows.map((row) => row.word))) continue
 
     return {
       target,
@@ -128,6 +130,13 @@ function meetsTileMinimums(
     { green: 0, yellow: 0 },
   )
   return counts.green >= minGreenTiles && counts.yellow >= minYellowTiles
+}
+
+/** A board dominated by one letter plays as a slog of interchangeable tiles. */
+function exceedsLetterCap(words: readonly string[]): boolean {
+  const counts = new Map<string, number>()
+  for (const letter of words.join("")) counts.set(letter, (counts.get(letter) ?? 0) + 1)
+  return [...counts.values()].some((count) => count > MAX_LETTER_COPIES)
 }
 
 function tileHelpfulness(guess: { pattern: LetterResult[] }): number {

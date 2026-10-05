@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { createWerdolPuzzle, ROW_COUNT } from "./puzzle"
+import { createWerdolPuzzle, MAX_LETTER_COPIES, ROW_COUNT } from "./puzzle"
+import { createSeededRandom } from "./seededRandom"
 import { evaluateGuess } from "./evaluateGuess"
 
 describe("createWerdolPuzzle", () => {
@@ -49,5 +50,14 @@ describe("createWerdolPuzzle", () => {
   it("can draw rows from the smaller answer-word list", () => {
     const puzzle = createWerdolPuzzle(() => 0.25, { useAnswerWordsForRows: true })
     expect(puzzle.rows).toHaveLength(ROW_COUNT)
+  })
+
+  it("never puts more than the capped number of one letter on a board", () => {
+    for (let seed = 0; seed < 300; seed += 1) {
+      const puzzle = createWerdolPuzzle(createSeededRandom(seed, 1), { minGreenTiles: 4, minYellowTiles: 4, wordListMode: "easy" })
+      const counts = new Map<string, number>()
+      for (const letter of puzzle.rows.map((row) => row.intendedGuess).join("")) counts.set(letter, (counts.get(letter) ?? 0) + 1)
+      expect(Math.max(...counts.values())).toBeLessThanOrEqual(MAX_LETTER_COPIES)
+    }
   })
 })
