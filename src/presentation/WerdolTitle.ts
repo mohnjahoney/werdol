@@ -42,7 +42,7 @@ export class WerdolTitle {
         ? titleTileDisplay
         : scene.add.text(0, WERDOL_TITLE_HEADER_Y, character, {
             color: TITLE_INK,
-            fontFamily: "monospace",
+            fontFamily: "'Courier', monospace",
             fontSize: "31px",
             fontStyle: "bold",
             resolution: RENDER_SCALE,
