@@ -14,6 +14,7 @@ import { createSeededRandom, nextPuzzleSeed, normalizeSeed, seedFromCurrentTime 
 import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
 import { loadPersonalBest, personalBestKey, savePersonalBest } from "../storage/personalBest"
 import { analyticsChoice, getPlayerName, isAnalyticsOptedOut, MAX_PLAYER_NAME_LENGTH, setAnalyticsOptedOut, setPlayerName, startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
+import { WERDOL_EVENTS } from "../analytics/events"
 import { OpeningAnimation } from "../presentation/OpeningAnimation"
 import { BOARD_LAYOUT, boardSlotCenter } from "../presentation/board/boardLayout"
 import { createTileRendererForMode, renderTileState, type TileRendererMode, type TileStateRenderer } from "../presentation/board/tileStateRenderers"
@@ -351,7 +352,7 @@ export class MainScene extends Phaser.Scene {
     } else {
       this.buildBoard()
     }
-    trackWerdolEvent("werdol:puzzle_started", {
+    trackWerdolEvent(WERDOL_EVENTS.puzzleStarted.type, {
       puzzleId: this.puzzleId,
       puzzleNumber: this.puzzleNumber,
       randomSeed: this.seed,
@@ -1442,7 +1443,7 @@ export class MainScene extends Phaser.Scene {
   private resetPuzzle(): void {
     if (this.swapAnimating || this.puzzleCreationFailed) return
     if (!this.gameBoard?.reorderByTileIds(this.initialTileIds)) return
-    trackWerdolEvent("werdol:puzzle_reset", {
+    trackWerdolEvent(WERDOL_EVENTS.puzzleReset.type, {
       puzzleId: this.puzzleId,
       puzzleNumber: this.puzzleNumber,
       movesTaken: this.movesTaken,
@@ -1476,7 +1477,7 @@ export class MainScene extends Phaser.Scene {
     this.playerPath.push({ tiles: nextTiles.map((tile) => ({ ...tile })), deltaCorrect: nextCorrectCount - previousCorrectCount, correctCount: nextCorrectCount, swap: { firstSlot, secondSlot } })
     this.setOccupancy(nextOccupancy)
     this.movesTaken += 1
-    trackWerdolEvent("werdol:move_executed", {
+    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, {
       puzzleId: this.puzzleId,
       puzzleNumber: this.puzzleNumber,
       moveNumber: this.movesTaken,
@@ -1495,7 +1496,7 @@ export class MainScene extends Phaser.Scene {
       if (!this.isDeveloperUrl()) savePersonalBest(this.personalBestKey, this.movesTaken)
       this.headerTitle?.animateTitleTileState(this, "matched")
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.playCompletionCelebration(newlyCompletedRows, true))
-      trackWerdolEvent("werdol:puzzle_ended", {
+      trackWerdolEvent(WERDOL_EVENTS.puzzleEnded.type, {
         puzzleId: this.puzzleId,
         puzzleNumber: this.puzzleNumber,
         outcome: "solved",
@@ -1507,7 +1508,7 @@ export class MainScene extends Phaser.Scene {
       })
     } else if (!this.outOfMovesDismissed && this.movesTaken >= Math.max(this.minimumMoves, this.personalBestMoves ?? this.minimumMoves) + EXTRA_MOVES) {
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.showOutOfMoves())
-      trackWerdolEvent("werdol:out_of_moves", {
+      trackWerdolEvent(WERDOL_EVENTS.outOfMoves.type, {
         puzzleId: this.puzzleId,
         puzzleNumber: this.puzzleNumber,
         randomSeed: this.seed,

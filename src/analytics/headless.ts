@@ -2,10 +2,11 @@ import { createScrambledBoard, type LetterTile } from "../core/board"
 import { countCorrectTiles, swapTileState } from "../core/reviewPath"
 import { createWerdolPuzzle, type WerdolPuzzle, type PuzzleSetup } from "../core/puzzle"
 import { createSeededRandom, normalizeSeed } from "../core/seededRandom"
+import { WERDOL_EVENTS, type WerdolEventType } from "./events"
 import type { JsonValue } from "./protocol"
 
 export interface HeadlessAnalyticsSink {
-  track(type: string, payload: Record<string, JsonValue>): void
+  track(type: WerdolEventType, payload: Record<string, JsonValue>): void
 }
 
 export interface HeadlessGameOptions {
@@ -36,11 +37,11 @@ export function createHeadlessGame(options: HeadlessGameOptions) {
   let movesTaken = 0
   let ended = false
 
-  const track = (type: string, payload: Record<string, JsonValue>) => {
+  const track = (type: WerdolEventType, payload: Record<string, JsonValue>) => {
     options.analytics?.track(type, { sessionId, puzzleId, randomSeed, ...payload })
   }
 
-  track("werdol:puzzle_started", { puzzleNumber: 1, wordListMode: options.setup?.wordListMode ?? "easy", targetWord: puzzle.target })
+  track(WERDOL_EVENTS.puzzleStarted.type, { puzzleNumber: 1, wordListMode: options.setup?.wordListMode ?? "easy", targetWord: puzzle.target })
 
   const getState = (): HeadlessGameState => ({
     puzzleId,
@@ -66,11 +67,11 @@ export function createHeadlessGame(options: HeadlessGameOptions) {
     tiles = swapTileState(tiles, firstSlot, slotIndex)
     selectedSlot = undefined
     movesTaken += 1
-    track("werdol:move_executed", { moveNumber: movesTaken, firstSlot, secondSlot: slotIndex })
+    track(WERDOL_EVENTS.moveExecuted.type, { moveNumber: movesTaken, firstSlot, secondSlot: slotIndex })
 
     if (!ended && countCorrectTiles(puzzle, tiles) === tiles.length) {
       ended = true
-      track("werdol:puzzle_ended", { outcome: "solved", movesTaken })
+      track(WERDOL_EVENTS.puzzleEnded.type, { outcome: "solved", movesTaken })
     }
   }
 
@@ -79,7 +80,7 @@ export function createHeadlessGame(options: HeadlessGameOptions) {
     selectedSlot = undefined
     movesTaken = 0
     ended = false
-    track("werdol:puzzle_reset", { movesTaken: 0 })
+    track(WERDOL_EVENTS.puzzleReset.type, { movesTaken: 0 })
   }
 
   return { getState, selectTile, reset, puzzle: puzzle as WerdolPuzzle, sessionId }

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { WERDOL_EVENTS, type WerdolEventDetails, type WerdolEventType } from "./events"
 import { analyticsChoice, isAnalyticsOptedOut, setAnalyticsOptedOut, setPlayerName, TRACKER_ENDPOINT, trackWerdolEvent } from "./tracker"
 
 describe("werdol analytics tracker", () => {
@@ -9,17 +10,17 @@ describe("werdol analytics tracker", () => {
   })
 
   it.each([
-    ["werdol:session_started", { platform: "web" }],
-    ["werdol:puzzle_started", { puzzleId: "puzzle-1", randomSeed: 123456 }],
-    ["werdol:move_executed", { puzzleId: "puzzle-1", moveNumber: 1, firstSlot: 0, secondSlot: 1 }],
-    ["werdol:puzzle_reset", { puzzleId: "puzzle-1", movesTaken: 3 }],
-    ["werdol:out_of_moves", { puzzleId: "puzzle-1", movesTaken: 17, minimumMoves: 14 }],
-    ["werdol:puzzle_ended", { puzzleId: "puzzle-1", outcome: "solved", movesTaken: 4 }],
+    [WERDOL_EVENTS.sessionStarted.type, { platform: "web" }],
+    [WERDOL_EVENTS.puzzleStarted.type, { puzzleId: "puzzle-1", randomSeed: 123456 }],
+    [WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", moveNumber: 1, firstSlot: 0, secondSlot: 1 }],
+    [WERDOL_EVENTS.puzzleReset.type, { puzzleId: "puzzle-1", movesTaken: 3 }],
+    [WERDOL_EVENTS.outOfMoves.type, { puzzleId: "puzzle-1", movesTaken: 17, minimumMoves: 14 }],
+    [WERDOL_EVENTS.puzzleEnded.type, { puzzleId: "puzzle-1", outcome: "solved", movesTaken: 4 }],
   ])("posts %s in the receiver protocol envelope", (event, details) => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response()))
     vi.stubGlobal("fetch", fetchMock)
 
-    trackWerdolEvent(event, details)
+    trackWerdolEvent(event as WerdolEventType, details as WerdolEventDetails[WerdolEventType])
 
     const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
     expect(calls).toHaveLength(1)
@@ -48,9 +49,9 @@ describe("werdol analytics tracker", () => {
     vi.stubGlobal("fetch", fetchMock)
     setAnalyticsOptedOut(true)
 
-    trackWerdolEvent("werdol:puzzle_started", { puzzleId: "puzzle-1", targetWord: "CRANE" })
-    trackWerdolEvent("werdol:move_executed", { puzzleId: "puzzle-1", moveNumber: 1 })
-    trackWerdolEvent("werdol:session_started", { platform: "web" })
+    trackWerdolEvent(WERDOL_EVENTS.puzzleStarted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, randomSeed: 123456, wordListMode: "easy", targetWord: "CRANE", minimumMoves: 1, wordsConsidered: 1 })
+    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" })
+    trackWerdolEvent(WERDOL_EVENTS.sessionStarted.type, { platform: "web" })
 
     const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
     expect(calls).toHaveLength(1)
@@ -76,7 +77,7 @@ describe("werdol analytics tracker", () => {
     setAnalyticsOptedOut(false)
     expect(analyticsChoice()).toBe("logged")
     expect(values.get("werdol-analytics-opt-out")).toBe("false")
-    trackWerdolEvent("werdol:move_executed", { puzzleId: "puzzle-1", moveNumber: 1 })
+    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -87,11 +88,11 @@ describe("werdol analytics tracker", () => {
       .map((call) => JSON.parse(String(call[1].body)).events[0].payload)
 
     setPlayerName("  Ada Lovelace  ")
-    trackWerdolEvent("werdol:move_executed", { moveNumber: 1 })
+    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" })
     expect(payloads()[0]).toMatchObject({ playerName: "Ada Lovelace" })
 
     setAnalyticsOptedOut(true)
-    trackWerdolEvent("werdol:session_started", { platform: "web" })
+    trackWerdolEvent(WERDOL_EVENTS.sessionStarted.type, { platform: "web" })
     expect(payloads()[1]).not.toHaveProperty("playerName")
   })
 })

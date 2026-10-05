@@ -1,4 +1,5 @@
 import { createEventEnvelope } from "./protocol"
+import { WERDOL_EVENTS, type WerdolEventDetails, type WerdolEventType } from "./events"
 
 export const TRACKER_ENDPOINT = "https://analytics-receiver.mohnjahoney.chatgpt.site/api/events"
 
@@ -7,8 +8,6 @@ const PLAYER_NAME_KEY = "werdol-player-name"
 export const MAX_PLAYER_NAME_LENGTH = 20
 
 export type AnalyticsChoice = "undecided" | "logged" | "private"
-
-type AnalyticsDetails = Record<string, unknown>
 
 const sessionId = createAnalyticsId()
 // Lets sessions that used the developer tools be filtered out of the data.
@@ -21,7 +20,7 @@ let puzzleNumber = 0
 export function trackSessionStarted(): void {
   if (sessionStarted) return
   sessionStarted = true
-  trackWerdolEvent("werdol:session_started", { platform: "web" })
+  trackWerdolEvent(WERDOL_EVENTS.sessionStarted.type, { platform: "web" })
 }
 
 /** "undecided" until the player has answered the welcome screen. */
@@ -62,9 +61,9 @@ export function startPuzzleAnalytics(): { puzzleId: string; puzzleNumber: number
   return { puzzleId: createAnalyticsId(), puzzleNumber }
 }
 
-export function trackWerdolEvent(event: string, details: AnalyticsDetails = {}): void {
+export function trackWerdolEvent<Event extends WerdolEventType>(event: Event, details: WerdolEventDetails[Event]): void {
   const optedOut = choice === "private"
-  if (optedOut && event !== "werdol:session_started") return
+  if (optedOut && event !== WERDOL_EVENTS.sessionStarted.type) return
   const envelope = createEventEnvelope({
     projectId: "werdol",
     source: "werdol",
