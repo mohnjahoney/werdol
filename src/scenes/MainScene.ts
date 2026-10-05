@@ -1435,7 +1435,8 @@ export class MainScene extends Phaser.Scene {
     if (!this.puzzleEndedTracked && this.puzzle.rows.every((_row, rowIndex) => this.isRowCorrect(rowIndex))) {
       this.puzzleEndedTracked = true
       // The bar keeps showing the best the player set out to beat; the new one appears on the next attempt.
-      savePersonalBest(this.personalBestKey, this.movesTaken)
+      // Developer sessions can auto-solve, so their solves never count as a best.
+      if (!this.isDeveloperUrl()) savePersonalBest(this.personalBestKey, this.movesTaken)
       this.headerTitle?.animateTitleTileState(this, "matched")
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.playCompletionCelebration(newlyCompletedRows, true))
       trackWerdolEvent("werdol:puzzle_ended", {
