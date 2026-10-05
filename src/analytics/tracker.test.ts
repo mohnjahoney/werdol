@@ -31,7 +31,7 @@ describe("werdol analytics tracker", () => {
       projectId: "werdol",
       source: "werdol",
       type: event,
-      time: expect.stringMatching(/^2026-/),
+      time: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       payload: { sessionId: expect.any(String), ...details },
     })] })
     expect(request.events[0]).not.toHaveProperty("seed")
