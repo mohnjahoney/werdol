@@ -414,17 +414,17 @@ export class MainScene extends Phaser.Scene {
     addWerdolHeader(this, undefined, "matched")
     const serif = "Georgia, Times New Roman, serif"
     const sans = "Arial, sans-serif"
-    const heading = this.add.text(215, 196, "Pick a game-name", { color: COLORS.ink, fontFamily: serif, fontSize: "26px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const heading = this.add.text(215, 196, "Pick a WERDOL-name", { color: COLORS.ink, fontFamily: serif, fontSize: "26px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
     const invitation = this.add.text(215, 232, "It's how WERDOL will know you.", { color: COLORS.muted, fontFamily: serif, fontSize: "15px", resolution: RENDER_SCALE }).setOrigin(0.5)
     // Anchored by its top-left corner: Phaser scales DOM elements about their origin, which shifts a centred one on high-density screens.
-    const nameField = this.add.dom(90, 274).setOrigin(0, 0).createFromHTML(`<input class="werdol-name-input" type="text" maxlength="${MAX_PLAYER_NAME_LENGTH}" placeholder="your game-name" aria-label="Game-name" autocomplete="off" autocapitalize="off" spellcheck="false">`)
+    const nameField = this.add.dom(90, 274).setOrigin(0, 0).createFromHTML(`<input class="werdol-name-input" type="text" maxlength="${MAX_PLAYER_NAME_LENGTH}" placeholder="your WERDOL-name" aria-label="WERDOL-name" autocomplete="off" autocapitalize="off" spellcheck="false">`)
     const input = nameField.node.querySelector("input") as HTMLInputElement
     input.value = getPlayerName()
     const optional = this.add.text(215, 328, "OPTIONAL", { color: COLORS.muted, fontFamily: sans, fontSize: "8px", fontStyle: "bold", letterSpacing: 1.1, resolution: RENDER_SCALE }).setOrigin(0.5)
 
     const playButton = this.add.rectangle(70, 372, 290, 46, COLORS.newPuzzleButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.ACTIVE_BUTTON_COLOR).setInteractive({ useHandCursor: true })
     const playLabel = this.add.text(215, 395, "", { color: COLORS.newPuzzleButtonText, fontFamily: sans, fontSize: "14px", fontStyle: "bold", letterSpacing: 0.8, resolution: RENDER_SCALE }).setOrigin(0.5)
-    const loggedNote = this.add.text(215, 444, "Your moves are logged, with your game-name if you gave one, to help make WERDOL better.", { color: COLORS.muted, fontFamily: serif, fontSize: "13px", align: "center", lineSpacing: 3, wordWrap: { width: 280 }, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const loggedNote = this.add.text(215, 444, "Your moves are logged, with your WERDOL-name if you gave one, to help make WERDOL better.", { color: COLORS.muted, fontFamily: serif, fontSize: "13px", align: "center", lineSpacing: 3, wordWrap: { width: 280 }, resolution: RENDER_SCALE }).setOrigin(0.5)
 
     const divider = this.add.rectangle(215, 500, 120, 1, 0xc6bdae, 0.85)
     const privateButton = this.add.rectangle(70, 528, 290, 38, 0xf3eedf).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
@@ -527,7 +527,7 @@ export class MainScene extends Phaser.Scene {
     const playerName = getPlayerName()
     loggingNotice.setText(isAnalyticsOptedOut()
       ? "Playing privately. Only the time you started is sent."
-      : `Playing ${playerName ? `as ${playerName}` : "without a game-name"}. Your moves are logged to help make WERDOL better.`)
+      : `Playing ${playerName ? `as ${playerName}` : "without a WERDOL-name"}. Your moves are logged to help make WERDOL better.`)
     loggingToggle.setText("CHANGE")
     loggingToggle.on("pointerdown", () => this.restartWithSetup({ ...this.currentPuzzleSetup(), showPlayerGate: true }))
     this.howToPlayOverlay.add([backdrop, panel, title, instructions, walkthroughButton, walkthroughLabel, loggingNotice, loggingToggle])
