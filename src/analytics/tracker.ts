@@ -5,6 +5,8 @@ export const TRACKER_ENDPOINT = "https://analytics-receiver.mohnjahoney.chatgpt.
 type AnalyticsDetails = Record<string, unknown>
 
 const sessionId = createAnalyticsId()
+// Lets sessions that used the developer tools be filtered out of the data.
+const devMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("dev") === "1"
 let sessionStarted = false
 let puzzleNumber = 0
 
@@ -26,7 +28,7 @@ export function trackWerdolEvent(event: string, details: AnalyticsDetails = {}):
     id: createAnalyticsId(),
     type: event,
     time: new Date().toISOString(),
-    payload: { sessionId, ...details },
+    payload: { sessionId, ...(devMode ? { devMode: true } : {}), ...details },
   })
 
   void fetch(TRACKER_ENDPOINT, {
