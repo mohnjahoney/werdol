@@ -45,6 +45,15 @@ describe("move counters", () => {
     expect(countOptimalMoves(puzzle, tiles("ELATS"))).toBe(1)
   })
 
+  it("counts a three-tile rotation as two moves", () => {
+    expect(countOptimalMoves(puzzle, tiles("LASTE"))).toBe(2)
+  })
+
+  it("leaves correct tiles alone when letters repeat", () => {
+    const repeated: WerdolPuzzle = { target: "CRANE", rows: [{ intendedGuess: "EERIE", pattern: ["absent", "absent", "present", "absent", "correct"] }] }
+    expect(countOptimalMoves(repeated, tiles("EEIRE"))).toBe(1)
+  })
+
   it("returns zero for an already solved board", () => {
     expect(countOptimalMoves(puzzle, tiles("SLATE"))).toBe(0)
   })

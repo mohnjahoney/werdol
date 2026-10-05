@@ -104,19 +104,38 @@ export function countOptimalMoves(puzzle: WerdolPuzzle, startingTiles: readonly 
   const positionsByLetter = new Map<string, number[]>()
   const goalsByLetter = new Map<string, number[]>()
 
+  const mapping = Array<number | undefined>(totalSlots).fill(undefined)
+
+  // Some optimal solution leaves every already-correct tile in place and
+  // exchanges every pair of tiles that sit in each other's goals, so those
+  // are settled up front and only the rest is searched.
   current.forEach((tile, slotIndex) => {
+    if (tile.letter === expected[slotIndex]) mapping[slotIndex] = slotIndex
+  })
+  for (let firstSlot = 0; firstSlot < totalSlots; firstSlot += 1) {
+    if (mapping[firstSlot] !== undefined) continue
+    for (let secondSlot = firstSlot + 1; secondSlot < totalSlots; secondSlot += 1) {
+      if (mapping[secondSlot] !== undefined) continue
+      if (current[firstSlot]?.letter !== expected[secondSlot] || current[secondSlot]?.letter !== expected[firstSlot]) continue
+      mapping[firstSlot] = secondSlot
+      mapping[secondSlot] = firstSlot
+      break
+    }
+  }
+
+  current.forEach((tile, slotIndex) => {
+    if (mapping[slotIndex] !== undefined) return
     const positions = positionsByLetter.get(tile.letter) ?? []
     positions.push(slotIndex)
     positionsByLetter.set(tile.letter, positions)
   })
   expected.forEach((letter, slotIndex) => {
-    if (letter === undefined) return
+    if (letter === undefined || mapping[slotIndex] !== undefined) return
     const goals = goalsByLetter.get(letter) ?? []
     goals.push(slotIndex)
     goalsByLetter.set(letter, goals)
   })
 
-  const mapping = Array<number | undefined>(totalSlots).fill(undefined)
   let bestMoves = totalSlots
   const groups = [...positionsByLetter.entries()]
 
