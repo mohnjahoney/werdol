@@ -9,7 +9,7 @@ import { letterMatchesOriginalTileLetter, tilesFromOccupancy } from "../core/boa
 import { createTimelineRects, DEFAULT_MAGNIFICATION_CONFIG, layoutTimelineRects, timelineScaleForStateCount, timelineWidthForStateCount, type MagnificationMode, type TimelineRect } from "../core/reviewTimeline"
 import { cardWidthForPath, createReviewCardRects, DEFAULT_REVIEW_CARD_CONFIG, focusCardIndexAtX, layoutReviewCards, type ReviewCardRect } from "../core/reviewCards"
 import { TimelineExplorer } from "../core/timelineExplorer"
-import { ALLOWED_WORDS, ANSWER_WORDS } from "../core/words"
+import { ANSWER_WORDS } from "../core/words"
 import { createSeededRandom, nextPuzzleSeed, normalizeSeed, seedFromCurrentTime } from "../core/seededRandom"
 import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
 import { startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
@@ -1308,10 +1308,7 @@ export class MainScene extends Phaser.Scene {
     return {
       ...this.currentPuzzleSetup(),
       personalBestMoves: undefined,
-      seed: nextPuzzleSeed(
-        this.seed,
-        this.wordListMode === "easy" ? ANSWER_WORDS.length : ALLOWED_WORDS.length,
-      ),
+      seed: nextPuzzleSeed(this.seed),
     }
   }
 
@@ -1339,10 +1336,10 @@ export class MainScene extends Phaser.Scene {
 
   private buildBoard(): void {
     const board = this.preparedBoard ?? createScrambledBoard(this.puzzle, this.letterRandom, this.challengingTestPattern ? CHALLENGE_INITIAL_LETTERS : undefined)
-    this.scrambledOccupancy = [...board.occupancy]
     this.preparedBoard = undefined
     this.letters = board.letters
     this.initialOccupancy = [...board.initialOccupancy]
+    this.scrambledOccupancy = [...board.occupancy]
     this.openingShuffleOccupancy = this.openingExplanationPending ? [...board.occupancy] : undefined
     const startingOccupancy = this.openingExplanationPending ? [...board.initialOccupancy] : [...board.occupancy]
     this.initialTileIds = board.tiles.map((tile) => tile.id)

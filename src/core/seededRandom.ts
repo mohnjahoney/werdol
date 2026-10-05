@@ -9,15 +9,22 @@ export function seedFromCurrentTime(date = new Date()): number {
   return date.getHours() * 10_000 + date.getMinutes() * 100 + date.getSeconds()
 }
 
-export function nextPuzzleSeed(seed: number, wordListLength: number): number {
-  if (!Number.isInteger(wordListLength) || wordListLength <= 0) return normalizeSeed(seed)
-  return ((Math.trunc(seed) * 17 - 3) % wordListLength + wordListLength) % wordListLength
+export function nextPuzzleSeed(seed: number): number {
+  return normalizeSeed(normalizeSeed(seed) + 1)
 }
 
 export function createSeededRandom(seed: number, stream = 0): () => number {
-  let state = (normalizeSeed(seed) + 1 + stream * 1009) >>> 0
+  // Scramble the starting state so neighbouring seeds give unrelated streams.
+  let state = scramble((normalizeSeed(seed) + 1 + stream * 1009) >>> 0)
   return () => {
     state = (Math.imul(1_664_525, state) + 1_013_904_223) >>> 0
     return state / 4_294_967_296
   }
+}
+
+function scramble(value: number): number {
+  let mixed = value
+  mixed = Math.imul(mixed ^ (mixed >>> 16), 0x85ebca6b)
+  mixed = Math.imul(mixed ^ (mixed >>> 13), 0xc2b2ae35)
+  return (mixed ^ (mixed >>> 16)) >>> 0
 }
