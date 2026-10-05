@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { extname, join, resolve } from "node:path"
 
 interface NgramConfig {
   yearStart: number
