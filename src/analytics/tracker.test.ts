@@ -9,6 +9,7 @@ describe("werdol analytics tracker", () => {
     ["werdol:puzzle_started", { puzzleId: "puzzle-1", randomSeed: 123456 }],
     ["werdol:move_executed", { puzzleId: "puzzle-1", moveNumber: 1, firstSlot: 0, secondSlot: 1 }],
     ["werdol:puzzle_reset", { puzzleId: "puzzle-1", movesTaken: 3 }],
+    ["werdol:out_of_moves", { puzzleId: "puzzle-1", movesTaken: 17, minimumMoves: 14 }],
     ["werdol:puzzle_ended", { puzzleId: "puzzle-1", outcome: "solved", movesTaken: 4 }],
   ])("posts %s in the receiver protocol envelope", (event, details) => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response()))

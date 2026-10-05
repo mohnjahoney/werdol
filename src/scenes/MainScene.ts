@@ -1432,10 +1432,9 @@ export class MainScene extends Phaser.Scene {
       })
     } else if (!this.outOfMovesDismissed && this.movesTaken >= Math.max(this.minimumMoves, this.personalBestMoves ?? this.minimumMoves) + EXTRA_MOVES) {
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.showOutOfMoves())
-      trackWerdolEvent("werdol:puzzle_ended", {
+      trackWerdolEvent("werdol:out_of_moves", {
         puzzleId: this.puzzleId,
         puzzleNumber: this.puzzleNumber,
-        outcome: "out_of_moves",
         randomSeed: this.seed,
         wordListMode: this.wordListMode,
         movesTaken: this.movesTaken,
