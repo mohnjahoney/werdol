@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { TRACKER_ENDPOINT, trackWerdolEvent } from "./tracker"
+import { isAnalyticsOptedOut, setAnalyticsOptedOut, TRACKER_ENDPOINT, trackWerdolEvent } from "./tracker"
 
 describe("werdol analytics tracker", () => {
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    setAnalyticsOptedOut(false)
+    vi.unstubAllGlobals()
+  })
 
   it.each([
     ["werdol:session_started", { platform: "web" }],
@@ -37,5 +40,41 @@ describe("werdol analytics tracker", () => {
     })] })
     expect(request.events[0]).not.toHaveProperty("seed")
     expect(request.events[0].payload).not.toHaveProperty("seed")
+  })
+
+  it("sends only the session start while opted out", () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response()))
+    vi.stubGlobal("fetch", fetchMock)
+    setAnalyticsOptedOut(true)
+
+    trackWerdolEvent("werdol:puzzle_started", { puzzleId: "puzzle-1", targetWord: "CRANE" })
+    trackWerdolEvent("werdol:move_executed", { puzzleId: "puzzle-1", moveNumber: 1 })
+    trackWerdolEvent("werdol:session_started", { platform: "web" })
+
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
+    expect(calls).toHaveLength(1)
+    const request = JSON.parse(String(calls[0]?.[1].body))
+    expect(request.events[0].type).toBe("werdol:session_started")
+    expect(request.events[0].payload).toEqual({ sessionId: expect.any(String), optedOut: true, platform: "web" })
+  })
+
+  it("remembers the opt-out choice and resumes when it is withdrawn", () => {
+    const values = new Map<string, string>()
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => void values.set(key, value),
+      removeItem: (key: string) => void values.delete(key),
+    })
+    const fetchMock = vi.fn(() => Promise.resolve(new Response()))
+    vi.stubGlobal("fetch", fetchMock)
+
+    setAnalyticsOptedOut(true)
+    expect(isAnalyticsOptedOut()).toBe(true)
+    expect(values.get("werdol-analytics-opt-out")).toBe("true")
+
+    setAnalyticsOptedOut(false)
+    expect(values.has("werdol-analytics-opt-out")).toBe(false)
+    trackWerdolEvent("werdol:move_executed", { puzzleId: "puzzle-1", moveNumber: 1 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

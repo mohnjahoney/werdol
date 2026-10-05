@@ -12,7 +12,8 @@ import { TimelineExplorer } from "../core/timelineExplorer"
 import { ANSWER_WORDS } from "../core/words"
 import { createSeededRandom, nextPuzzleSeed, normalizeSeed, seedFromCurrentTime } from "../core/seededRandom"
 import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
-import { startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
+import { loadPersonalBest, personalBestKey, savePersonalBest } from "../storage/personalBest"
+import { isAnalyticsOptedOut, setAnalyticsOptedOut, startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
 import { OpeningAnimation } from "../presentation/OpeningAnimation"
 import { BOARD_LAYOUT, boardSlotCenter } from "../presentation/board/boardLayout"
 import { createTileRendererForMode, renderTileState, type TileRendererMode, type TileStateRenderer } from "../presentation/board/tileStateRenderers"
@@ -71,7 +72,6 @@ type TileVisual = GameBoardTileVisual
 
 interface SceneData extends PuzzleSetup {
   challengingTestPattern?: boolean
-  personalBestMoves?: number
 }
 type InteractionMode = "swap" | "reveal"
 type WordListMode = "easy" | "hard"
@@ -112,6 +112,7 @@ export class MainScene extends Phaser.Scene {
   private movesTaken = 0
   private minimumMoves = 0
   private personalBestMoves?: number
+  private personalBestKey = ""
   private outOfMovesDismissed = false
   private challengeBenchmark?: SolverBenchmark
   private puzzleCreationFailed = false
@@ -242,7 +243,8 @@ export class MainScene extends Phaser.Scene {
     this.swapAnimating = false
     this.movesTaken = 0
     this.minimumMoves = 0
-    this.personalBestMoves = data.personalBestMoves
+    this.personalBestMoves = undefined
+    this.personalBestKey = ""
     this.outOfMovesDismissed = false
     this.challengeBenchmark = undefined
     this.playerPath = []
@@ -441,10 +443,10 @@ export class MainScene extends Phaser.Scene {
     this.howToPlayOverlay = this.add.container(0, 0).setDepth(30).setVisible(false)
     const backdrop = this.add.rectangle(0, 0, 430, 760, 0x211f1a, 0.18).setOrigin(0, 0).setInteractive()
     const panel = this.add.rectangle(25, 150, 380, 550, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
-    const title = this.add.text(50, 192, "HOW TO PLAY", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "13px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE })
-    const instructions = this.add.text(50, 230, "WERDOL begins where WORDLE ends...\n\nImagine that a WORDLE game has been played and completed after 5 guesses. We see the resulting gameboard here.\n\nEach tile is colored with green, yellow, and gray meaning 'correct', 'misplaced', and 'unnecessary'.\n\nHowever...the letters in the first four rows are mixed up, while keeping the colors in place.\n\nCHALLENGE: recreate those 4 word guesses in as few moves as possible.\n\nTap two letters to swap. Tiles change when they receive the right letter.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", lineSpacing: 5, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
-    const walkthroughButton = this.add.rectangle(50, 630, 330, 36, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const walkthroughLabel = this.add.text(215, 648, "WATCH A DEMO", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "11px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const title = this.add.text(50, 172, "HOW TO PLAY", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "13px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE })
+    const instructions = this.add.text(50, 206, "WERDOL begins where WORDLE ends...\n\nImagine that a WORDLE game has been played and completed after 5 guesses. We see the resulting gameboard here.\n\nEach tile is colored with green, yellow, and gray meaning 'correct', 'misplaced', and 'unnecessary'.\n\nHowever...the letters in the first four rows are mixed up, while keeping the colors in place.\n\nCHALLENGE: recreate those 4 word guesses in as few moves as possible.\n\nTap two letters to swap. Tiles change when they receive the right letter.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", lineSpacing: 5, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
+    const walkthroughButton = this.add.rectangle(50, 590, 330, 36, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const walkthroughLabel = this.add.text(215, 608, "WATCH A DEMO", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "11px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setOrigin(0.5)
     walkthroughButton.on("pointerover", () => {
       walkthroughButton.setFillStyle(COLORS.primaryButtonHover)
       walkthroughLabel.setColor(COLORS.primaryButtonHoverText)
@@ -457,7 +459,21 @@ export class MainScene extends Phaser.Scene {
       this.howToPlayOverlay.setVisible(false)
       this.startWalkthrough()
     })
-    this.howToPlayOverlay.add([backdrop, panel, title, instructions, walkthroughButton, walkthroughLabel])
+    const loggingNotice = this.add.text(50, 640, "", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", lineSpacing: 2, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
+    const loggingToggle = this.add.text(50, 668, "", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setPadding(0, 6).setInteractive({ useHandCursor: true })
+    const updateLoggingNotice = (): void => {
+      const optedOut = isAnalyticsOptedOut()
+      loggingNotice.setText(optedOut
+        ? "Logging is off. Only the time you started playing is sent."
+        : "Your moves are logged, without your name, and analyzed to improve WERDOL.")
+      loggingToggle.setText(optedOut ? "TURN LOGGING BACK ON" : "OPT OUT")
+    }
+    loggingToggle.on("pointerdown", () => {
+      setAnalyticsOptedOut(!isAnalyticsOptedOut())
+      updateLoggingNotice()
+    })
+    updateLoggingNotice()
+    this.howToPlayOverlay.add([backdrop, panel, title, instructions, walkthroughButton, walkthroughLabel, loggingNotice, loggingToggle])
     infoButton.on("pointerdown", () => this.howToPlayOverlay.setVisible(!this.howToPlayOverlay.visible))
     backdrop.on("pointerdown", () => this.howToPlayOverlay.setVisible(false))
     this.queueUiEntrance([infoButton, infoLabel])
@@ -1300,14 +1316,12 @@ export class MainScene extends Phaser.Scene {
       wordListMode: this.wordListMode,
       challengingTestPattern: this.challengingTestPattern,
       seed: this.seed,
-      personalBestMoves: this.personalBestMoves,
     }
   }
 
   private nextPuzzleSetup(): SceneData {
     return {
       ...this.currentPuzzleSetup(),
-      personalBestMoves: undefined,
       seed: nextPuzzleSeed(this.seed),
     }
   }
@@ -1343,6 +1357,8 @@ export class MainScene extends Phaser.Scene {
     this.openingShuffleOccupancy = this.openingExplanationPending ? [...board.occupancy] : undefined
     const startingOccupancy = this.openingExplanationPending ? [...board.initialOccupancy] : [...board.occupancy]
     this.initialTileIds = board.tiles.map((tile) => tile.id)
+    this.personalBestKey = personalBestKey(this.puzzle, board.tiles)
+    this.personalBestMoves = loadPersonalBest(this.personalBestKey)
     this.challengeBenchmark = this.challengingTestPattern ? benchmarkSolvers(this.puzzle, board.tiles) : undefined
     this.minimumMoves = this.challengeBenchmark?.optimalMoves ?? countOptimalMoves(this.puzzle, board.tiles)
     this.gameBoard = new GameBoard(this, this.puzzle, board, this.tileRenderer, {
@@ -1418,6 +1434,8 @@ export class MainScene extends Phaser.Scene {
       .filter((rowIndex) => !previouslyCorrect[rowIndex] && this.isRowCorrect(rowIndex))
     if (!this.puzzleEndedTracked && this.puzzle.rows.every((_row, rowIndex) => this.isRowCorrect(rowIndex))) {
       this.puzzleEndedTracked = true
+      // The bar keeps showing the best the player set out to beat; the new one appears on the next attempt.
+      savePersonalBest(this.personalBestKey, this.movesTaken)
       this.headerTitle?.animateTitleTileState(this, "matched")
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.playCompletionCelebration(newlyCompletedRows, true))
       trackWerdolEvent("werdol:puzzle_ended", {
@@ -1531,10 +1549,7 @@ export class MainScene extends Phaser.Scene {
       retryLabel.setColor(COLORS.ink)
     })
     retryButton.on("pointerdown", () => {
-      this.restartWithSetup({
-        ...this.currentPuzzleSetup(),
-        personalBestMoves: Math.min(this.personalBestMoves ?? Number.POSITIVE_INFINITY, this.movesTaken),
-      })
+      this.restartWithSetup(this.currentPuzzleSetup())
     })
     newPuzzleButton.on("pointerover", () => {
       newPuzzleButton.setFillStyle(COLORS.newPuzzleButtonHover)
