@@ -13,7 +13,7 @@ import { ANSWER_WORDS } from "../core/words"
 import { createSeededRandom, nextPuzzleSeed, normalizeSeed, seedFromCurrentTime } from "../core/seededRandom"
 import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
 import { loadPersonalBest, personalBestKey, savePersonalBest } from "../storage/personalBest"
-import { isAnalyticsOptedOut, setAnalyticsOptedOut, startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
+import { analyticsChoice, getPlayerName, isAnalyticsOptedOut, MAX_PLAYER_NAME_LENGTH, setAnalyticsOptedOut, setPlayerName, startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
 import { OpeningAnimation } from "../presentation/OpeningAnimation"
 import { BOARD_LAYOUT, boardSlotCenter } from "../presentation/board/boardLayout"
 import { createTileRendererForMode, renderTileState, type TileRendererMode, type TileStateRenderer } from "../presentation/board/tileStateRenderers"
@@ -72,6 +72,7 @@ type TileVisual = GameBoardTileVisual
 
 interface SceneData extends PuzzleSetup {
   challengingTestPattern?: boolean
+  showPlayerGate?: boolean
 }
 type InteractionMode = "swap" | "reveal"
 type WordListMode = "easy" | "hard"
@@ -236,6 +237,11 @@ export class MainScene extends Phaser.Scene {
     const data = pendingSceneData ?? {}
     pendingSceneData = undefined
     configureLogicalCamera(this)
+    // Nothing is generated or logged until the player has chosen how to play.
+    if (data.showPlayerGate || analyticsChoice() === "undecided") {
+      this.buildPlayerGate(data)
+      return
+    }
     this.letters = []
     this.initialOccupancy = []
     this.scrambledOccupancy = []
@@ -403,6 +409,62 @@ export class MainScene extends Phaser.Scene {
     this.scene.restart()
   }
 
+  private buildPlayerGate(data: SceneData): void {
+    addWerdolHeader(this, undefined, "matched")
+    const serif = "Georgia, Times New Roman, serif"
+    const sans = "Arial, sans-serif"
+    const heading = this.add.text(215, 196, "Pick a game-name", { color: COLORS.ink, fontFamily: serif, fontSize: "26px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const invitation = this.add.text(215, 232, "It's how WERDOL will know you.", { color: COLORS.muted, fontFamily: serif, fontSize: "15px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    // Anchored by its top-left corner: Phaser scales DOM elements about their origin, which shifts a centred one on high-density screens.
+    const nameField = this.add.dom(90, 274).setOrigin(0, 0).createFromHTML(`<input class="werdol-name-input" type="text" maxlength="${MAX_PLAYER_NAME_LENGTH}" placeholder="your game-name" aria-label="Game-name" autocomplete="off" autocapitalize="off" spellcheck="false">`)
+    const input = nameField.node.querySelector("input") as HTMLInputElement
+    input.value = getPlayerName()
+    const optional = this.add.text(215, 328, "OPTIONAL", { color: COLORS.muted, fontFamily: sans, fontSize: "8px", fontStyle: "bold", letterSpacing: 1.1, resolution: RENDER_SCALE }).setOrigin(0.5)
+
+    const playButton = this.add.rectangle(70, 372, 290, 46, COLORS.newPuzzleButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.ACTIVE_BUTTON_COLOR).setInteractive({ useHandCursor: true })
+    const playLabel = this.add.text(215, 395, "", { color: COLORS.newPuzzleButtonText, fontFamily: sans, fontSize: "14px", fontStyle: "bold", letterSpacing: 0.8, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const loggedNote = this.add.text(215, 444, "Your moves are logged, with your game-name if you gave one, to help make WERDOL better.", { color: COLORS.muted, fontFamily: serif, fontSize: "13px", align: "center", lineSpacing: 3, wordWrap: { width: 280 }, resolution: RENDER_SCALE }).setOrigin(0.5)
+
+    const divider = this.add.rectangle(215, 500, 120, 1, 0xc6bdae, 0.85)
+    const privateButton = this.add.rectangle(70, 528, 290, 38, 0xf3eedf).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const privateLabel = this.add.text(215, 547, "PLAY PRIVATELY", { color: COLORS.ink, fontFamily: sans, fontSize: "11px", fontStyle: "bold", letterSpacing: 0.8, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const privateNote = this.add.text(215, 588, "Nothing is logged except the time you started.", { color: COLORS.muted, fontFamily: serif, fontSize: "13px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const footer = this.add.text(215, 706, "You can change this any time from the ? button.", { color: COLORS.muted, fontFamily: serif, fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(0.5)
+
+    const updatePlayLabel = (): void => {
+      const name = input.value.trim()
+      playLabel.setText(name ? `PLAY AS ${name}` : "PLAY").setScale(1)
+      if (playLabel.width > 266) playLabel.setScale(266 / playLabel.width)
+    }
+    const start = (playPrivately: boolean): void => {
+      setPlayerName(playPrivately ? "" : input.value)
+      setAnalyticsOptedOut(playPrivately)
+      this.restartWithSetup({ ...data, showPlayerGate: false })
+    }
+    input.addEventListener("input", updatePlayLabel)
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") start(false)
+    })
+    playButton.on("pointerover", () => {
+      playButton.setFillStyle(COLORS.newPuzzleButtonHover)
+      playLabel.setColor(COLORS.newPuzzleButtonHoverText)
+    })
+    playButton.on("pointerout", () => {
+      playButton.setFillStyle(COLORS.newPuzzleButton)
+      playLabel.setColor(COLORS.newPuzzleButtonText)
+    })
+    playButton.on("pointerdown", () => start(false))
+    privateButton.on("pointerover", () => privateButton.setFillStyle(COLORS.button))
+    privateButton.on("pointerout", () => privateButton.setFillStyle(0xf3eedf))
+    privateButton.on("pointerdown", () => start(true))
+    updatePlayLabel()
+
+    const objects = [heading, invitation, optional, playButton, playLabel, loggedNote, divider, privateButton, privateLabel, privateNote, footer]
+    objects.forEach((object) => object.setAlpha(0))
+    input.style.opacity = "0"
+    this.tweens.add({ targets: objects, alpha: 1, duration: UI_ENTRANCE_DURATION, ease: UI_ENTRANCE_EASE, onUpdate: (tween) => { input.style.opacity = String(tween.progress) }, onComplete: () => { input.style.opacity = "1" } })
+  }
+
   private buildNewPuzzleButton(): void {
     const button = this.add.rectangle(117, 626, 196, 42, COLORS.newPuzzleButton)
       .setOrigin(0, 0)
@@ -461,18 +523,12 @@ export class MainScene extends Phaser.Scene {
     })
     const loggingNotice = this.add.text(50, 640, "", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", lineSpacing: 2, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
     const loggingToggle = this.add.text(50, 668, "", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setPadding(0, 6).setInteractive({ useHandCursor: true })
-    const updateLoggingNotice = (): void => {
-      const optedOut = isAnalyticsOptedOut()
-      loggingNotice.setText(optedOut
-        ? "Logging is off. Only the time you started playing is sent."
-        : "Your moves are logged, without your name, and analyzed to improve WERDOL.")
-      loggingToggle.setText(optedOut ? "TURN LOGGING BACK ON" : "OPT OUT")
-    }
-    loggingToggle.on("pointerdown", () => {
-      setAnalyticsOptedOut(!isAnalyticsOptedOut())
-      updateLoggingNotice()
-    })
-    updateLoggingNotice()
+    const playerName = getPlayerName()
+    loggingNotice.setText(isAnalyticsOptedOut()
+      ? "Playing privately. Only the time you started is sent."
+      : `Playing ${playerName ? `as ${playerName}` : "without a game-name"}. Your moves are logged to help make WERDOL better.`)
+    loggingToggle.setText("CHANGE")
+    loggingToggle.on("pointerdown", () => this.restartWithSetup({ ...this.currentPuzzleSetup(), showPlayerGate: true }))
     this.howToPlayOverlay.add([backdrop, panel, title, instructions, walkthroughButton, walkthroughLabel, loggingNotice, loggingToggle])
     infoButton.on("pointerdown", () => this.howToPlayOverlay.setVisible(!this.howToPlayOverlay.visible))
     backdrop.on("pointerdown", () => this.howToPlayOverlay.setVisible(false))

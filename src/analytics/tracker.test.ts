@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { isAnalyticsOptedOut, setAnalyticsOptedOut, TRACKER_ENDPOINT, trackWerdolEvent } from "./tracker"
+import { analyticsChoice, isAnalyticsOptedOut, setAnalyticsOptedOut, setPlayerName, TRACKER_ENDPOINT, trackWerdolEvent } from "./tracker"
 
 describe("werdol analytics tracker", () => {
   afterEach(() => {
     setAnalyticsOptedOut(false)
+    setPlayerName("")
     vi.unstubAllGlobals()
   })
 
@@ -73,8 +74,24 @@ describe("werdol analytics tracker", () => {
     expect(values.get("werdol-analytics-opt-out")).toBe("true")
 
     setAnalyticsOptedOut(false)
-    expect(values.has("werdol-analytics-opt-out")).toBe(false)
+    expect(analyticsChoice()).toBe("logged")
+    expect(values.get("werdol-analytics-opt-out")).toBe("false")
     trackWerdolEvent("werdol:move_executed", { puzzleId: "puzzle-1", moveNumber: 1 })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("sends the game-name with logged events but never while playing privately", () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response()))
+    vi.stubGlobal("fetch", fetchMock)
+    const payloads = (): Array<Record<string, unknown>> => (fetchMock.mock.calls as unknown as Array<[string, RequestInit]>)
+      .map((call) => JSON.parse(String(call[1].body)).events[0].payload)
+
+    setPlayerName("  Ada Lovelace  ")
+    trackWerdolEvent("werdol:move_executed", { moveNumber: 1 })
+    expect(payloads()[0]).toMatchObject({ playerName: "Ada Lovelace" })
+
+    setAnalyticsOptedOut(true)
+    trackWerdolEvent("werdol:session_started", { platform: "web" })
+    expect(payloads()[1]).not.toHaveProperty("playerName")
   })
 })

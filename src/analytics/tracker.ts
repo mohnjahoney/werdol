@@ -3,6 +3,10 @@ import { createEventEnvelope } from "./protocol"
 export const TRACKER_ENDPOINT = "https://analytics-receiver.mohnjahoney.chatgpt.site/api/events"
 
 const OPT_OUT_KEY = "werdol-analytics-opt-out"
+const PLAYER_NAME_KEY = "werdol-player-name"
+export const MAX_PLAYER_NAME_LENGTH = 20
+
+export type AnalyticsChoice = "undecided" | "logged" | "private"
 
 type AnalyticsDetails = Record<string, unknown>
 
@@ -10,7 +14,8 @@ const sessionId = createAnalyticsId()
 // Lets sessions that used the developer tools be filtered out of the data.
 const devMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("dev") === "1"
 let sessionStarted = false
-let optedOut = readOptOut()
+let choice = readChoice()
+let playerName = readPlayerName()
 let puzzleNumber = 0
 
 export function trackSessionStarted(): void {
@@ -19,18 +24,36 @@ export function trackSessionStarted(): void {
   trackWerdolEvent("werdol:session_started", { platform: "web" })
 }
 
+/** "undecided" until the player has answered the welcome screen. */
+export function analyticsChoice(): AnalyticsChoice {
+  return choice
+}
+
 export function isAnalyticsOptedOut(): boolean {
-  return optedOut
+  return choice === "private"
 }
 
 /** While opted out, only the session start (and so the time play began) is sent. */
 export function setAnalyticsOptedOut(value: boolean): void {
-  optedOut = value
+  choice = value ? "private" : "logged"
   try {
-    if (value) globalThis.localStorage?.setItem(OPT_OUT_KEY, "true")
-    else globalThis.localStorage?.removeItem(OPT_OUT_KEY)
+    globalThis.localStorage?.setItem(OPT_OUT_KEY, String(value))
   } catch {
     // The choice still holds for this visit.
+  }
+}
+
+export function getPlayerName(): string {
+  return playerName
+}
+
+export function setPlayerName(name: string): void {
+  playerName = name.trim().slice(0, MAX_PLAYER_NAME_LENGTH)
+  try {
+    if (playerName) globalThis.localStorage?.setItem(PLAYER_NAME_KEY, playerName)
+    else globalThis.localStorage?.removeItem(PLAYER_NAME_KEY)
+  } catch {
+    // The name still holds for this visit.
   }
 }
 
@@ -40,6 +63,7 @@ export function startPuzzleAnalytics(): { puzzleId: string; puzzleNumber: number
 }
 
 export function trackWerdolEvent(event: string, details: AnalyticsDetails = {}): void {
+  const optedOut = choice === "private"
   if (optedOut && event !== "werdol:session_started") return
   const envelope = createEventEnvelope({
     projectId: "werdol",
@@ -47,7 +71,13 @@ export function trackWerdolEvent(event: string, details: AnalyticsDetails = {}):
     id: createAnalyticsId(),
     type: event,
     time: new Date().toISOString(),
-    payload: { sessionId, ...(devMode ? { devMode: true } : {}), ...(optedOut ? { optedOut: true } : {}), ...details },
+    payload: {
+      sessionId,
+      ...(devMode ? { devMode: true } : {}),
+      ...(optedOut ? { optedOut: true } : {}),
+      ...(!optedOut && playerName ? { playerName } : {}),
+      ...details,
+    },
   })
 
   void fetch(TRACKER_ENDPOINT, {
@@ -60,11 +90,21 @@ export function trackWerdolEvent(event: string, details: AnalyticsDetails = {}):
   })
 }
 
-function readOptOut(): boolean {
+function readChoice(): AnalyticsChoice {
   try {
-    return globalThis.localStorage?.getItem(OPT_OUT_KEY) === "true"
+    const stored = globalThis.localStorage?.getItem(OPT_OUT_KEY)
+    if (stored === "true") return "private"
+    return stored === "false" ? "logged" : "undecided"
   } catch {
-    return false
+    return "undecided"
+  }
+}
+
+function readPlayerName(): string {
+  try {
+    return (globalThis.localStorage?.getItem(PLAYER_NAME_KEY) ?? "").trim().slice(0, MAX_PLAYER_NAME_LENGTH)
+  } catch {
+    return ""
   }
 }
 

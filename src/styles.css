@@ -48,3 +48,30 @@ body {
     box-shadow: none;
   }
 }
+
+.werdol-name-input {
+  width: 250px;
+  padding: 4px 0 6px;
+  border: 0;
+  border-bottom: 2px solid #756d5e;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  color: #211f1a;
+  caret-color: #71845f;
+  font: bold 24px Arial, sans-serif;
+  letter-spacing: 1px;
+  text-align: center;
+  appearance: none;
+}
+
+.werdol-name-input::placeholder {
+  color: #b5ad9d;
+  font-weight: normal;
+  letter-spacing: 0;
+}
+
+.werdol-name-input:focus {
+  border-bottom-color: #71845f;
+}
+
