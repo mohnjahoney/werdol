@@ -1,5 +1,5 @@
 import { createEventEnvelope } from "./protocol"
-import { WERDOL_EVENTS, type WerdolEventDetails, type WerdolEventType } from "./events"
+import { WERDOL_EVENTS, type WerdolCommonFields, type WerdolEventDetails, type WerdolEventType } from "./events"
 
 export const TRACKER_ENDPOINT = "https://analytics-receiver.mohnjahoney.chatgpt.site/api/events"
 
@@ -64,19 +64,19 @@ export function startPuzzleAnalytics(): { puzzleId: string; puzzleNumber: number
 export function trackWerdolEvent<Event extends WerdolEventType>(event: Event, details: WerdolEventDetails[Event]): void {
   const optedOut = choice === "private"
   if (optedOut && event !== WERDOL_EVENTS.sessionStarted.type) return
+  const common: WerdolCommonFields = {
+    sessionId,
+    ...(devMode ? { devMode: true } : {}),
+    ...(optedOut ? { optedOut: true } : {}),
+    ...(!optedOut && playerName ? { playerName } : {}),
+  }
   const envelope = createEventEnvelope({
     projectId: "werdol",
     source: "werdol",
     id: createAnalyticsId(),
     type: event,
     time: new Date().toISOString(),
-    payload: {
-      sessionId,
-      ...(devMode ? { devMode: true } : {}),
-      ...(optedOut ? { optedOut: true } : {}),
-      ...(!optedOut && playerName ? { playerName } : {}),
-      ...details,
-    },
+    payload: { ...common, ...details },
   })
 
   void fetch(TRACKER_ENDPOINT, {

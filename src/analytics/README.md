@@ -21,10 +21,21 @@ endpoint. Each request has the form:
 }
 ```
 
-The receiver validates the envelope and preserves the JSON `payload` as-is.
-It does not need a database migration for a new optional WERDOL payload field.
-A receiver change is appropriate only when a field must be indexed, displayed,
-or queried separately.
+The receiver validates the envelope, then checks each event against the
+schema WERDOL has published for itself: the event type must be listed, every
+required field present with the right type, and no unlisted field included.
+Anything else is rejected.
+
+That schema is `WERDOL_EVENT_SCHEMA` in `events.ts`. The deploy workflow
+publishes it with `npm run analytics:publish` just before each deploy, so the
+receiver learns about a new event or field before any player can send it. To
+add or change a field: edit `WerdolEventDetails` and `WERDOL_EVENT_FIELDS`
+together (the compiler rejects a mismatch), then push. `npm run
+analytics:smoke` sends one of every event to the live receiver to confirm it
+accepts them. Both commands need `TRACKER_CURL_PASSWORD`.
+
+Adding a field is always safe. Removing or renaming one loses events from
+players who still have the previous version open, until they reload.
 
 `tracker.ts` adds `sessionId` to every payload. It may also add `devMode`,
 `optedOut`, and, for logged play only, `playerName`. The player-facing

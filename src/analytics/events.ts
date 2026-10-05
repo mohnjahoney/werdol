@@ -81,3 +81,78 @@ export interface WerdolEventDetails {
     elapsedMs: number
   }
 }
+
+type FieldSpecFor<Value> = Value extends string ? "string" : Value extends number ? "number" : "boolean"
+
+/**
+ * The same fields as data, in the form the receiver validates against.
+ * The compiler rejects this table if it lists a field WerdolEventDetails
+ * does not have, omits one it does, or gives one the wrong type.
+ */
+export const WERDOL_EVENT_FIELDS = {
+  [WERDOL_EVENTS.sessionStarted.type]: {
+    platform: "string",
+  },
+  [WERDOL_EVENTS.puzzleStarted.type]: {
+    puzzleId: "string",
+    puzzleNumber: "number",
+    randomSeed: "number",
+    wordListMode: "string",
+    targetWord: "string",
+    minimumMoves: "number",
+    wordsConsidered: "number",
+  },
+  [WERDOL_EVENTS.moveExecuted.type]: {
+    puzzleId: "string",
+    puzzleNumber: "number",
+    moveNumber: "number",
+    firstSlot: "number",
+    secondSlot: "number",
+    interactionMode: "string",
+  },
+  [WERDOL_EVENTS.puzzleReset.type]: {
+    puzzleId: "string",
+    puzzleNumber: "number",
+    movesTaken: "number",
+  },
+  [WERDOL_EVENTS.outOfMoves.type]: {
+    puzzleId: "string",
+    puzzleNumber: "number",
+    randomSeed: "number",
+    wordListMode: "string",
+    movesTaken: "number",
+    minimumMoves: "number",
+    elapsedMs: "number",
+  },
+  [WERDOL_EVENTS.puzzleEnded.type]: {
+    puzzleId: "string",
+    puzzleNumber: "number",
+    outcome: "string",
+    randomSeed: "number",
+    wordListMode: "string",
+    movesTaken: "number",
+    minimumMoves: "number",
+    elapsedMs: "number",
+  },
+} as const satisfies { [Type in WerdolEventType]: { [Field in keyof WerdolEventDetails[Type]]: FieldSpecFor<WerdolEventDetails[Type][Field]> } }
+
+/** Metadata tracker.ts adds to every payload. A trailing `?` marks a field optional. */
+export const WERDOL_COMMON_FIELDS = {
+  sessionId: "string",
+  devMode: "boolean?",
+  optedOut: "boolean?",
+  playerName: "string?",
+} as const
+
+export interface WerdolCommonFields {
+  sessionId: string
+  devMode?: boolean
+  optedOut?: boolean
+  playerName?: string
+}
+
+/** The event schema published to the receiver, which rejects anything that does not fit it. */
+export const WERDOL_EVENT_SCHEMA = {
+  common: WERDOL_COMMON_FIELDS,
+  events: WERDOL_EVENT_FIELDS,
+} as const

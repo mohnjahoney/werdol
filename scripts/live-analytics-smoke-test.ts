@@ -1,51 +1,43 @@
-import { createHeadlessGame, type HeadlessAnalyticsSink } from "../src/analytics/headless.ts"
-import { createEventEnvelope, type JsonValue } from "../src/analytics/protocol.ts"
+// Sends one of every WERDOL event to the live receiver and fails if any is
+// rejected. Run it after changing the event catalogue and publishing it.
+// The events are marked devMode so they can be filtered out of the data.
+// Usage: TRACKER_CURL_PASSWORD=... npm run analytics:smoke
+import { WERDOL_EVENTS, type WerdolCommonFields, type WerdolEventDetails } from "../src/analytics/events.ts"
+import { createEventEnvelope } from "../src/analytics/protocol.ts"
 
 const endpoint = "https://analytics-receiver.mohnjahoney.chatgpt.site/api/events"
 const password = process.env.TRACKER_CURL_PASSWORD
 
 if (!password) throw new Error("Set TRACKER_CURL_PASSWORD before running the live analytics smoke test.")
 
-const requests: Promise<Response>[] = []
-const analytics: HeadlessAnalyticsSink = {
-  track(type: string, payload: Record<string, JsonValue>) {
-    const envelope = createEventEnvelope({
-      id: crypto.randomUUID(),
-      projectId: "werdol",
-      source: "werdol",
-      type,
-      time: new Date().toISOString(),
-      payload,
-    })
-    requests.push(fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${password}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ events: [envelope] }),
-    }))
-  },
+const puzzle = { puzzleId: `smoke-${crypto.randomUUID()}`, puzzleNumber: 1 }
+const samples: WerdolEventDetails = {
+  [WERDOL_EVENTS.sessionStarted.type]: { platform: "web" },
+  [WERDOL_EVENTS.puzzleStarted.type]: { ...puzzle, randomSeed: 13579, wordListMode: "easy", targetWord: "CRANE", minimumMoves: 13, wordsConsidered: 40 },
+  [WERDOL_EVENTS.moveExecuted.type]: { ...puzzle, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" },
+  [WERDOL_EVENTS.puzzleReset.type]: { ...puzzle, movesTaken: 1 },
+  [WERDOL_EVENTS.outOfMoves.type]: { ...puzzle, randomSeed: 13579, wordListMode: "easy", movesTaken: 16, minimumMoves: 13, elapsedMs: 60_000 },
+  [WERDOL_EVENTS.puzzleEnded.type]: { ...puzzle, outcome: "solved", randomSeed: 13579, wordListMode: "easy", movesTaken: 14, minimumMoves: 13, elapsedMs: 75_000 },
+}
+const common: WerdolCommonFields = { sessionId: `smoke-${crypto.randomUUID()}`, devMode: true }
+
+const failures: string[] = []
+for (const [type, details] of Object.entries(samples)) {
+  const envelope = createEventEnvelope({
+    id: crypto.randomUUID(),
+    projectId: "werdol",
+    source: "werdol",
+    type,
+    time: new Date().toISOString(),
+    payload: { ...common, ...details },
+  })
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${password}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ events: [envelope] }),
+  })
+  if (!response.ok) failures.push(`${type} → ${response.status}: ${await response.text()}`)
 }
 
-const first = createHeadlessGame({ randomSeed: 13579, analytics })
-first.selectTile(0)
-first.selectTile(1)
-first.selectTile(2)
-first.selectTile(3)
-first.reset()
-
-const second = createHeadlessGame({ randomSeed: 24680, analytics })
-second.selectTile(0)
-second.selectTile(1)
-second.selectTile(4)
-second.selectTile(5)
-
-const responses = await Promise.all(requests)
-const failures = responses.filter((response) => !response.ok)
-if (failures.length > 0) {
-  const details = await Promise.all(failures.map(async (response) => `${response.status}: ${await response.text()}`))
-  throw new Error(`Live analytics smoke test failed: ${details.join("; ")}`)
-}
-
-console.log(`Sent ${responses.length} analytics events from 2 headless sessions.`)
+if (failures.length > 0) throw new Error(`Live analytics smoke test failed:\n${failures.join("\n")}`)
+console.log(`The receiver accepted all ${Object.keys(samples).length} WERDOL event types.`)

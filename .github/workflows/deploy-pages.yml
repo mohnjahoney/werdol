@@ -36,6 +36,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The receiver rejects WERDOL events that do not fit the published schema,
+      # so it must hold this build's schema before the build goes live.
+      - name: Publish analytics schema
+        env:
+          TRACKER_CURL_PASSWORD: ${{ secrets.TRACKER_CURL_PASSWORD }}
+        run: npm run analytics:publish
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
