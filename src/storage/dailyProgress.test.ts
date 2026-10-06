@@ -26,7 +26,7 @@ describe("daily progress", () => {
     expect(recordSolved("2026-01-02", 0, "second").position).toBe(1)
     expect(advancePast("2026-01-02", 1).position).toBe(2)
     const stored = JSON.parse(values.get("werdol-daily-progress") ?? "{}")
-    expect(stored).toMatchObject({ day: "2026-01-02", position: 2, results: ["second", "unsolved", "unsolved", "unsolved", "unsolved"], attempts: [2, 0, 0, 0, 0] })
+    expect(stored).toMatchObject({ day: "2026-01-02", position: 2, results: ["second", "unsolved", "unsolved", "unsolved", "unsolved", "unsolved"], attempts: [2, 0, 0, 0, 0, 0] })
   })
 
   it("finishes the day after the last puzzle and can be replayed without losing solves", () => {
@@ -41,7 +41,8 @@ describe("daily progress", () => {
 
   it("discards progress from another day and ignores corrupt data", () => {
     stubStorage({ "werdol-daily-progress": JSON.stringify({ day: "2026-01-04", position: 3, results: ["first", "second", "finished", "unsolved", "unsolved"], attempts: [1, 1, 1, 0, 0] }) })
-    expect(loadDailyProgress("2026-01-04").position).toBe(3)
+    // Saved while the day had five puzzles: kept, with the sixth unplayed.
+    expect(loadDailyProgress("2026-01-04")).toEqual({ day: "2026-01-04", position: 3, results: ["first", "second", "finished", "unsolved", "unsolved", "unsolved"], attempts: [1, 1, 1, 0, 0, 0] })
     expect(loadDailyProgress("2026-01-05").position).toBe(0)
     stubStorage({ "werdol-daily-progress": "{broken" })
     expect(loadDailyProgress("2026-01-06").position).toBe(0)

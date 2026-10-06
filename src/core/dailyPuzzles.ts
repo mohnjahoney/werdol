@@ -1,7 +1,7 @@
 import { normalizeSeed } from "./seededRandom"
 
-/** How many puzzles everyone shares each day. */
-export const DAILY_PUZZLE_COUNT = 5
+/** How many puzzles everyone shares each day: one for each letter of the title. */
+export const DAILY_PUZZLE_COUNT = 6
 
 /**
  * Bump this whenever a change makes the same seed produce a different puzzle

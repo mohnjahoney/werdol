@@ -6,7 +6,7 @@ import { tileBorderColorForTileColor } from "./board/tileVisuals"
 
 export const WERDOL_TITLE_CENTER_X = 215
 export const WERDOL_TITLE_HEADER_Y = 58
-export const WERDOL_TITLE_SLOT_SPACING = 32
+export const WERDOL_TITLE_SLOT_SPACING = 38
 export const WERDOL_TITLE_TILE_SIZE = 32
 export const WERDOL_TITLE_TILE_RADIUS = 8
 
@@ -15,8 +15,8 @@ const TITLE_YELLOW = 0xc49f52
 const TITLE_PAPER = "#f3eedf"
 // Green for getting it first try, yellow for the second try, gray for finishing any other way.
 const PROGRESS_RESULT_COLORS: Record<Exclude<DailyResult, "unsolved">, number> = { first: 0x71845f, second: 0xc49f52, finished: 0xaaa396 }
-// W, E, R, D and L each stand for one of the day's puzzles; the O is the title's own tile.
-const PROGRESS_PIECES = [0, 1, 2, 3, 5] as const
+// Until its puzzle is solved the O is a neutral tile, so its colour never reads as a result.
+const PROGRESS_UNSOLVED_O_COLOR = 0xcfc8b8
 
 export type WerdolTitleDisplay = Phaser.GameObjects.Text | Phaser.GameObjects.Container
 
@@ -94,16 +94,21 @@ export class WerdolTitle {
   }
 
   /**
-   * Shows the day's progress in the title: once a puzzle is solved, its letter
-   * sits in a tile the size of the O's, coloured by how the puzzle went.
+   * Shows the day's progress in the title, one letter per puzzle: once a puzzle
+   * is solved, its letter sits in a tile the size of the O's, coloured by how
+   * the puzzle went. The O has no letter, so its own tile takes the colour.
    */
   showDailyProgress(scene: Phaser.Scene, results: readonly DailyResult[]): void {
     this.progressTiles.forEach((tile) => tile.destroy())
     this.progressTiles = []
-    PROGRESS_PIECES.forEach((pieceIndex, puzzleIndex) => {
-      const letter = this.pieces[pieceIndex]?.display
-      if (!(letter instanceof Phaser.GameObjects.Text)) return
-      const result = results[puzzleIndex] ?? "unsolved"
+    this.pieces.forEach((piece, pieceIndex) => {
+      const result = results[pieceIndex] ?? "unsolved"
+      const letter = piece.display
+      if (!(letter instanceof Phaser.GameObjects.Text)) {
+        this.titleTile.setFillStyle(result === "unsolved" ? PROGRESS_UNSOLVED_O_COLOR : PROGRESS_RESULT_COLORS[result])
+        this.resetTitleTile("matched")
+        return
+      }
       letter.setColor(result === "unsolved" ? TITLE_INK : TITLE_PAPER)
       if (result === "unsolved") return
       const position = this.slotPosition(pieceIndex)

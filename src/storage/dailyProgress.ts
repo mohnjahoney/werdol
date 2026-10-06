@@ -24,7 +24,7 @@ export function loadDailyProgress(day: string): DailyProgress {
   if (sessionProgress?.day === day) return copy(sessionProgress)
   try {
     const parsed: unknown = JSON.parse(globalThis.localStorage?.getItem(STORAGE_KEY) ?? "null")
-    if (isProgress(parsed) && parsed.day === day) return copy(parsed)
+    if (isProgress(parsed) && parsed.day === day) return padded(parsed)
   } catch {
     // Unreadable progress is treated as a fresh day.
   }
@@ -75,11 +75,22 @@ function copy(progress: DailyProgress): DailyProgress {
   return { day: progress.day, position: progress.position, results: [...progress.results], attempts: [...progress.attempts] }
 }
 
+/** Progress saved when the day had fewer puzzles is kept, with the new puzzles unplayed. */
+function padded(progress: DailyProgress): DailyProgress {
+  const fresh = freshProgress(progress.day)
+  return {
+    day: progress.day,
+    position: progress.position,
+    results: fresh.results.map((result, index) => progress.results[index] ?? result),
+    attempts: fresh.attempts.map((count, index) => progress.attempts[index] ?? count),
+  }
+}
+
 function isProgress(value: unknown): value is DailyProgress {
   if (typeof value !== "object" || value === null) return false
   const candidate = value as Partial<DailyProgress>
   return typeof candidate.day === "string"
     && Number.isInteger(candidate.position) && (candidate.position ?? -1) >= 0 && (candidate.position ?? 0) <= DAILY_PUZZLE_COUNT
-    && Array.isArray(candidate.results) && candidate.results.length === DAILY_PUZZLE_COUNT && candidate.results.every((entry) => (["unsolved", "finished", "second", "first"] as unknown[]).includes(entry))
-    && Array.isArray(candidate.attempts) && candidate.attempts.length === DAILY_PUZZLE_COUNT && candidate.attempts.every((entry) => Number.isInteger(entry) && entry >= 0)
+    && Array.isArray(candidate.results) && candidate.results.length <= DAILY_PUZZLE_COUNT && candidate.results.every((entry) => (["unsolved", "finished", "second", "first"] as unknown[]).includes(entry))
+    && Array.isArray(candidate.attempts) && candidate.attempts.length <= DAILY_PUZZLE_COUNT && candidate.attempts.every((entry) => Number.isInteger(entry) && entry >= 0)
 }

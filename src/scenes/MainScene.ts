@@ -496,7 +496,7 @@ export class MainScene extends Phaser.Scene {
     const sans = "Arial, sans-serif"
     const heading = this.add.text(215, 250, "That's today's WERDOL", { color: COLORS.ink, fontFamily: serif, fontSize: "26px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
     const tally = this.add.text(215, 292, `You solved ${solvedCount} of ${DAILY_PUZZLE_COUNT}.`, { color: COLORS.ink, fontFamily: serif, fontSize: "17px", resolution: RENDER_SCALE }).setOrigin(0.5)
-    const next = this.add.text(215, 322, "Five new puzzles arrive at midnight.", { color: COLORS.muted, fontFamily: serif, fontSize: "15px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const next = this.add.text(215, 322, `${DAILY_PUZZLE_COUNT} new puzzles arrive at midnight.`, { color: COLORS.muted, fontFamily: serif, fontSize: "15px", resolution: RENDER_SCALE }).setOrigin(0.5)
     const replayButton = this.add.rectangle(70, 388, 290, 38, 0xf3eedf).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
     const replayLabel = this.add.text(215, 407, "REPLAY TODAY'S PUZZLES", { color: COLORS.ink, fontFamily: sans, fontSize: "11px", fontStyle: "bold", letterSpacing: 0.8, resolution: RENDER_SCALE }).setOrigin(0.5)
     replayButton.on("pointerover", () => replayButton.setFillStyle(COLORS.button))
