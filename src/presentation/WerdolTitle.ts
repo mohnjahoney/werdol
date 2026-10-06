@@ -11,6 +11,13 @@ export const WERDOL_TITLE_TILE_RADIUS = 8
 
 const TITLE_INK = "#211f1a"
 const TITLE_YELLOW = 0xc49f52
+const TITLE_PAPER = "#f3eedf"
+const PROGRESS_TILE_SIZE = 28
+const PROGRESS_TILE_RADIUS = 7
+const PROGRESS_SOLVED_COLOR = 0x71845f
+const PROGRESS_CURRENT_STROKE = 0x756d5e
+// W, E, R, D and L each stand for one of the day's puzzles; the O is the title's own tile.
+const PROGRESS_PIECES = [0, 1, 2, 3, 5] as const
 
 export type WerdolTitleDisplay = Phaser.GameObjects.Text | Phaser.GameObjects.Container
 
@@ -24,6 +31,7 @@ export class WerdolTitle {
   readonly pieces: WerdolTitlePiece[]
   private readonly tileRenderer: TileStateRenderer
   private readonly titleTile: Phaser.GameObjects.Rectangle
+  private progressTiles: Phaser.GameObjects.Rectangle[] = []
 
   constructor(
     scene: Phaser.Scene,
@@ -84,6 +92,29 @@ export class WerdolTitle {
     this.titleTile.setStrokeStyle(state === "unmatched" ? 1 : 0, tileBorderColorForTileColor(this.titleTile.fillColor))
     if (state === "matched") this.tileRenderer.renderMatchedTile(this.titleTile)
     else this.tileRenderer.renderUnmatchedTile(this.titleTile)
+  }
+
+  /**
+   * Shows the day's progress in the title: a letter sits in a filled tile once
+   * its puzzle is solved, and in an outlined one while its puzzle is in play.
+   */
+  showDailyProgress(scene: Phaser.Scene, solved: readonly boolean[], currentIndex?: number): void {
+    this.progressTiles.forEach((tile) => tile.destroy())
+    this.progressTiles = []
+    PROGRESS_PIECES.forEach((pieceIndex, puzzleIndex) => {
+      const letter = this.pieces[pieceIndex]?.display
+      if (!(letter instanceof Phaser.GameObjects.Text)) return
+      const isSolved = solved[puzzleIndex] === true
+      letter.setColor(isSolved ? TITLE_PAPER : TITLE_INK)
+      if (!isSolved && puzzleIndex !== currentIndex) return
+      const position = this.slotPosition(pieceIndex)
+      const tile = scene.add.rectangle(position.x, position.y, PROGRESS_TILE_SIZE, PROGRESS_TILE_SIZE, PROGRESS_SOLVED_COLOR, isSolved ? 1 : 0)
+        .setRounded(PROGRESS_TILE_RADIUS)
+      // The puzzle in play is outlined, including when it is a solved one being replayed.
+      if (puzzleIndex === currentIndex) tile.setStrokeStyle(1.5, isSolved ? 0x211f1a : PROGRESS_CURRENT_STROKE)
+      this.container.addAt(tile, 0)
+      this.progressTiles.push(tile)
+    })
   }
 
   dispose(): void {

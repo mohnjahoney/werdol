@@ -10,7 +10,9 @@ import { createTimelineRects, DEFAULT_MAGNIFICATION_CONFIG, layoutTimelineRects,
 import { cardWidthForPath, createReviewCardRects, DEFAULT_REVIEW_CARD_CONFIG, focusCardIndexAtX, layoutReviewCards, type ReviewCardRect } from "../core/reviewCards"
 import { TimelineExplorer } from "../core/timelineExplorer"
 import { ANSWER_WORDS } from "../core/words"
-import { createSeededRandom, nextPuzzleSeed, normalizeSeed, seedFromCurrentTime } from "../core/seededRandom"
+import { createSeededRandom, nextPuzzleSeed, normalizeSeed } from "../core/seededRandom"
+import { DAILY_PUZZLE_COUNT, dailySeed, localDayKey } from "../core/dailyPuzzles"
+import { advancePast, loadDailyProgress, recordAttempt, recordSolved, restartDay } from "../storage/dailyProgress"
 import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
 import { loadPersonalBest, personalBestKey, savePersonalBest } from "../storage/personalBest"
 import { analyticsChoice, getPlayerName, isAnalyticsOptedOut, MAX_PLAYER_NAME_LENGTH, setAnalyticsOptedOut, setPlayerName, startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
@@ -74,6 +76,9 @@ type TileVisual = GameBoardTileVisual
 interface SceneData extends PuzzleSetup {
   challengingTestPattern?: boolean
   showPlayerGate?: boolean
+  // Set together when a puzzle from the day's shared list is restarted; absent for a puzzle outside it.
+  puzzleDay?: string
+  dailyIndex?: number
 }
 type InteractionMode = "swap" | "reveal"
 type WordListMode = "easy" | "hard"
@@ -146,6 +151,9 @@ export class MainScene extends Phaser.Scene {
   private challengingTestPattern = false
   private appliedChallengingTestPattern = false
   private seed = 0
+  private puzzleDay = ""
+  private dailyIndex?: number
+  private attempt = 1
   private wordRandom!: () => number
   private letterRandom!: () => number
   private puzzleId = ""
@@ -235,7 +243,7 @@ export class MainScene extends Phaser.Scene {
   }
 
   create(): void {
-    const data = pendingSceneData ?? {}
+    let data = pendingSceneData ?? {}
     pendingSceneData = undefined
     configureLogicalCamera(this)
     // Nothing is generated or logged until the player has chosen how to play.
@@ -243,6 +251,19 @@ export class MainScene extends Phaser.Scene {
       this.buildPlayerGate(data)
       return
     }
+    // Without an explicit seed, play the next puzzle of today's shared list.
+    if (data.seed === undefined) {
+      const day = localDayKey()
+      const progress = loadDailyProgress(day)
+      if (progress.position >= DAILY_PUZZLE_COUNT) {
+        this.buildDailyDone(day)
+        return
+      }
+      data = { ...data, seed: dailySeed(day, progress.position), puzzleDay: day, dailyIndex: progress.position }
+    }
+    this.puzzleDay = data.puzzleDay ?? localDayKey()
+    this.dailyIndex = data.dailyIndex
+    this.attempt = this.dailyIndex === undefined ? 1 : recordAttempt(this.puzzleDay, this.dailyIndex)
     this.letters = []
     this.initialOccupancy = []
     this.scrambledOccupancy = []
@@ -291,7 +312,7 @@ export class MainScene extends Phaser.Scene {
     this.wordListMode = data.wordListMode ?? "easy"
     this.challengingTestPattern = data.challengingTestPattern ?? false
     this.appliedChallengingTestPattern = this.challengingTestPattern
-    this.seed = normalizeSeed(data.seed ?? seedFromCurrentTime())
+    this.seed = normalizeSeed(data.seed ?? 0)
     this.wordRandom = createSeededRandom(this.seed, 1)
     this.letterRandom = createSeededRandom(this.seed, 2)
     this.puzzleEndedTracked = false
@@ -329,6 +350,7 @@ export class MainScene extends Phaser.Scene {
     }
     const header = addWerdolHeader(this, undefined, "matched")
     this.headerTitle = header
+    if (this.dailyIndex !== undefined) header.showDailyProgress(this, loadDailyProgress(this.puzzleDay).solved, this.dailyIndex)
     const rendererTrigger = header.pieces.find((piece) => piece.character === "O")?.display
     const rendererTile = rendererTrigger instanceof Phaser.GameObjects.Container
       ? rendererTrigger.getAt(0)
@@ -353,8 +375,7 @@ export class MainScene extends Phaser.Scene {
       this.buildBoard()
     }
     trackWerdolEvent(WERDOL_EVENTS.puzzleStarted.type, {
-      puzzleId: this.puzzleId,
-      puzzleNumber: this.puzzleNumber,
+      ...this.puzzleEventFields(),
       randomSeed: this.seed,
       wordListMode: this.wordListMode,
       targetWord: this.puzzle.target,
@@ -464,6 +485,29 @@ export class MainScene extends Phaser.Scene {
     objects.forEach((object) => object.setAlpha(0))
     input.style.opacity = "0"
     this.tweens.add({ targets: objects, alpha: 1, duration: UI_ENTRANCE_DURATION, ease: UI_ENTRANCE_EASE, onUpdate: (tween) => { input.style.opacity = String(tween.progress) }, onComplete: () => { input.style.opacity = "1" } })
+  }
+
+  private buildDailyDone(day: string): void {
+    trackSessionStarted()
+    const progress = loadDailyProgress(day)
+    const solvedCount = progress.solved.filter(Boolean).length
+    addWerdolHeader(this, undefined, "matched").showDailyProgress(this, progress.solved)
+    const serif = "Georgia, Times New Roman, serif"
+    const sans = "Arial, sans-serif"
+    const heading = this.add.text(215, 250, "That's today's WERDOL", { color: COLORS.ink, fontFamily: serif, fontSize: "26px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const tally = this.add.text(215, 292, `You solved ${solvedCount} of ${DAILY_PUZZLE_COUNT}.`, { color: COLORS.ink, fontFamily: serif, fontSize: "17px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const next = this.add.text(215, 322, "Five new puzzles arrive at midnight.", { color: COLORS.muted, fontFamily: serif, fontSize: "15px", resolution: RENDER_SCALE }).setOrigin(0.5)
+    const replayButton = this.add.rectangle(70, 388, 290, 38, 0xf3eedf).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const replayLabel = this.add.text(215, 407, "REPLAY TODAY'S PUZZLES", { color: COLORS.ink, fontFamily: sans, fontSize: "11px", fontStyle: "bold", letterSpacing: 0.8, resolution: RENDER_SCALE }).setOrigin(0.5)
+    replayButton.on("pointerover", () => replayButton.setFillStyle(COLORS.button))
+    replayButton.on("pointerout", () => replayButton.setFillStyle(0xf3eedf))
+    replayButton.on("pointerdown", () => {
+      restartDay(day)
+      this.restartWithSetup({})
+    })
+    const objects = [heading, tally, next, replayButton, replayLabel]
+    objects.forEach((object) => object.setAlpha(0))
+    this.tweens.add({ targets: objects, alpha: 1, duration: UI_ENTRANCE_DURATION, ease: UI_ENTRANCE_EASE })
   }
 
   private buildNewPuzzleButton(): void {
@@ -1071,7 +1115,7 @@ export class MainScene extends Phaser.Scene {
       input.value = String(this.seed).padStart(6, "0")
       return
     }
-    this.restartWithSetup({ ...this.currentPuzzleSetup(), seed: Number(input.value) })
+    this.restartWithSetup({ ...this.currentPuzzleSetup(), seed: Number(input.value), puzzleDay: undefined, dailyIndex: undefined })
   }
 
   private setSeedInputVisible(visible: boolean): void {
@@ -1373,10 +1417,27 @@ export class MainScene extends Phaser.Scene {
       wordListMode: this.wordListMode,
       challengingTestPattern: this.challengingTestPattern,
       seed: this.seed,
+      puzzleDay: this.dailyIndex === undefined ? undefined : this.puzzleDay,
+      dailyIndex: this.dailyIndex,
+    }
+  }
+
+  private puzzleEventFields(): { puzzleId: string; puzzleNumber: number; puzzleDay: string; dailyIndex: number; attempt: number } {
+    return {
+      puzzleId: this.puzzleId,
+      puzzleNumber: this.puzzleNumber,
+      puzzleDay: this.puzzleDay,
+      dailyIndex: this.dailyIndex === undefined ? 0 : this.dailyIndex + 1,
+      attempt: this.attempt,
     }
   }
 
   private nextPuzzleSetup(): SceneData {
+    if (this.dailyIndex !== undefined) {
+      // Move on in today's list; create() picks the puzzle, or the end-of-day screen, from the saved position.
+      advancePast(this.puzzleDay, this.dailyIndex)
+      return { ...this.currentPuzzleSetup(), seed: undefined, puzzleDay: undefined, dailyIndex: undefined }
+    }
     return {
       ...this.currentPuzzleSetup(),
       seed: nextPuzzleSeed(this.seed),
@@ -1444,8 +1505,7 @@ export class MainScene extends Phaser.Scene {
     if (this.swapAnimating || this.puzzleCreationFailed) return
     if (!this.gameBoard?.reorderByTileIds(this.initialTileIds)) return
     trackWerdolEvent(WERDOL_EVENTS.puzzleReset.type, {
-      puzzleId: this.puzzleId,
-      puzzleNumber: this.puzzleNumber,
+      ...this.puzzleEventFields(),
       movesTaken: this.movesTaken,
     })
     this.puzzleEndedTracked = false
@@ -1478,8 +1538,7 @@ export class MainScene extends Phaser.Scene {
     this.setOccupancy(nextOccupancy)
     this.movesTaken += 1
     trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, {
-      puzzleId: this.puzzleId,
-      puzzleNumber: this.puzzleNumber,
+      ...this.puzzleEventFields(),
       moveNumber: this.movesTaken,
       firstSlot,
       secondSlot,
@@ -1494,11 +1553,11 @@ export class MainScene extends Phaser.Scene {
       // The bar keeps showing the best the player set out to beat; the new one appears on the next attempt.
       // Developer sessions can auto-solve, so their solves never count as a best.
       if (!this.isDeveloperUrl()) savePersonalBest(this.personalBestKey, this.movesTaken)
+      if (this.dailyIndex !== undefined) this.headerTitle?.showDailyProgress(this, recordSolved(this.puzzleDay, this.dailyIndex).solved)
       this.headerTitle?.animateTitleTileState(this, "matched")
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.playCompletionCelebration(newlyCompletedRows, true))
       trackWerdolEvent(WERDOL_EVENTS.puzzleEnded.type, {
-        puzzleId: this.puzzleId,
-        puzzleNumber: this.puzzleNumber,
+        ...this.puzzleEventFields(),
         outcome: "solved",
         randomSeed: this.seed,
         wordListMode: this.wordListMode,
@@ -1509,8 +1568,7 @@ export class MainScene extends Phaser.Scene {
     } else if (!this.outOfMovesDismissed && this.movesTaken >= Math.max(this.minimumMoves, this.personalBestMoves ?? this.minimumMoves) + EXTRA_MOVES) {
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.showOutOfMoves())
       trackWerdolEvent(WERDOL_EVENTS.outOfMoves.type, {
-        puzzleId: this.puzzleId,
-        puzzleNumber: this.puzzleNumber,
+        ...this.puzzleEventFields(),
         randomSeed: this.seed,
         wordListMode: this.wordListMode,
         movesTaken: this.movesTaken,

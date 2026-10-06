@@ -34,14 +34,24 @@ export const WERDOL_EVENTS = {
 
 export type WerdolEventType = typeof WERDOL_EVENTS[keyof typeof WERDOL_EVENTS]["type"]
 
-/** Event-specific fields, excluding tracker-supplied metadata. */
+/**
+ * Event-specific fields, excluding tracker-supplied metadata.
+ *
+ * Puzzle events carry puzzleDay (the player's local date), dailyIndex (the
+ * puzzle's place in that day's shared list, from 1; 0 for a puzzle outside the
+ * list) and attempt (1 for the first time this player started it that day).
+ */
 export interface WerdolEventDetails {
   [WERDOL_EVENTS.sessionStarted.type]: {
     platform: "web"
+    generatorVersion: number
   }
   [WERDOL_EVENTS.puzzleStarted.type]: {
     puzzleId: string
     puzzleNumber: number
+    puzzleDay: string
+    dailyIndex: number
+    attempt: number
     randomSeed: number
     wordListMode: "easy" | "hard"
     targetWord: string
@@ -51,6 +61,9 @@ export interface WerdolEventDetails {
   [WERDOL_EVENTS.moveExecuted.type]: {
     puzzleId: string
     puzzleNumber: number
+    puzzleDay: string
+    dailyIndex: number
+    attempt: number
     moveNumber: number
     firstSlot: number
     secondSlot: number
@@ -59,11 +72,17 @@ export interface WerdolEventDetails {
   [WERDOL_EVENTS.puzzleReset.type]: {
     puzzleId: string
     puzzleNumber: number
+    puzzleDay: string
+    dailyIndex: number
+    attempt: number
     movesTaken: number
   }
   [WERDOL_EVENTS.outOfMoves.type]: {
     puzzleId: string
     puzzleNumber: number
+    puzzleDay: string
+    dailyIndex: number
+    attempt: number
     randomSeed: number
     wordListMode: "easy" | "hard"
     movesTaken: number
@@ -73,6 +92,9 @@ export interface WerdolEventDetails {
   [WERDOL_EVENTS.puzzleEnded.type]: {
     puzzleId: string
     puzzleNumber: number
+    puzzleDay: string
+    dailyIndex: number
+    attempt: number
     outcome: "solved"
     randomSeed: number
     wordListMode: "easy" | "hard"
@@ -92,10 +114,14 @@ type FieldSpecFor<Value> = Value extends string ? "string" : Value extends numbe
 export const WERDOL_EVENT_FIELDS = {
   [WERDOL_EVENTS.sessionStarted.type]: {
     platform: "string",
+    generatorVersion: "number",
   },
   [WERDOL_EVENTS.puzzleStarted.type]: {
     puzzleId: "string",
     puzzleNumber: "number",
+    puzzleDay: "string",
+    dailyIndex: "number",
+    attempt: "number",
     randomSeed: "number",
     wordListMode: "string",
     targetWord: "string",
@@ -105,6 +131,9 @@ export const WERDOL_EVENT_FIELDS = {
   [WERDOL_EVENTS.moveExecuted.type]: {
     puzzleId: "string",
     puzzleNumber: "number",
+    puzzleDay: "string",
+    dailyIndex: "number",
+    attempt: "number",
     moveNumber: "number",
     firstSlot: "number",
     secondSlot: "number",
@@ -113,11 +142,17 @@ export const WERDOL_EVENT_FIELDS = {
   [WERDOL_EVENTS.puzzleReset.type]: {
     puzzleId: "string",
     puzzleNumber: "number",
+    puzzleDay: "string",
+    dailyIndex: "number",
+    attempt: "number",
     movesTaken: "number",
   },
   [WERDOL_EVENTS.outOfMoves.type]: {
     puzzleId: "string",
     puzzleNumber: "number",
+    puzzleDay: "string",
+    dailyIndex: "number",
+    attempt: "number",
     randomSeed: "number",
     wordListMode: "string",
     movesTaken: "number",
@@ -127,6 +162,9 @@ export const WERDOL_EVENT_FIELDS = {
   [WERDOL_EVENTS.puzzleEnded.type]: {
     puzzleId: "string",
     puzzleNumber: "number",
+    puzzleDay: "string",
+    dailyIndex: "number",
+    attempt: "number",
     outcome: "string",
     randomSeed: "number",
     wordListMode: "string",

@@ -49,15 +49,15 @@ describe("werdol analytics tracker", () => {
     vi.stubGlobal("fetch", fetchMock)
     setAnalyticsOptedOut(true)
 
-    trackWerdolEvent(WERDOL_EVENTS.puzzleStarted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, randomSeed: 123456, wordListMode: "easy", targetWord: "CRANE", minimumMoves: 1, wordsConsidered: 1 })
-    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" })
-    trackWerdolEvent(WERDOL_EVENTS.sessionStarted.type, { platform: "web" })
+    trackWerdolEvent(WERDOL_EVENTS.puzzleStarted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, puzzleDay: "2026-10-05", dailyIndex: 1, attempt: 1, randomSeed: 123456, wordListMode: "easy", targetWord: "CRANE", minimumMoves: 1, wordsConsidered: 1 })
+    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, puzzleDay: "2026-10-05", dailyIndex: 1, attempt: 1, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" })
+    trackWerdolEvent(WERDOL_EVENTS.sessionStarted.type, { platform: "web", generatorVersion: 1 })
 
     const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
     expect(calls).toHaveLength(1)
     const request = JSON.parse(String(calls[0]?.[1].body))
     expect(request.events[0].type).toBe("werdol:session_started")
-    expect(request.events[0].payload).toEqual({ sessionId: expect.any(String), optedOut: true, platform: "web" })
+    expect(request.events[0].payload).toEqual({ sessionId: expect.any(String), optedOut: true, platform: "web", generatorVersion: 1 })
   })
 
   it("remembers the opt-out choice and resumes when it is withdrawn", () => {
@@ -77,7 +77,7 @@ describe("werdol analytics tracker", () => {
     setAnalyticsOptedOut(false)
     expect(analyticsChoice()).toBe("logged")
     expect(values.get("werdol-analytics-opt-out")).toBe("false")
-    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" })
+    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, puzzleDay: "2026-10-05", dailyIndex: 1, attempt: 1, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -88,11 +88,11 @@ describe("werdol analytics tracker", () => {
       .map((call) => JSON.parse(String(call[1].body)).events[0].payload)
 
     setPlayerName("  Ada Lovelace  ")
-    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" })
+    trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, { puzzleId: "puzzle-1", puzzleNumber: 1, puzzleDay: "2026-10-05", dailyIndex: 1, attempt: 1, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" })
     expect(payloads()[0]).toMatchObject({ playerName: "Ada Lovelace" })
 
     setAnalyticsOptedOut(true)
-    trackWerdolEvent(WERDOL_EVENTS.sessionStarted.type, { platform: "web" })
+    trackWerdolEvent(WERDOL_EVENTS.sessionStarted.type, { platform: "web", generatorVersion: 1 })
     expect(payloads()[1]).not.toHaveProperty("playerName")
   })
 })

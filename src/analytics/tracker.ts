@@ -1,3 +1,4 @@
+import { GENERATOR_VERSION } from "../core/dailyPuzzles"
 import { createEventEnvelope } from "./protocol"
 import { WERDOL_EVENTS, type WerdolCommonFields, type WerdolEventDetails, type WerdolEventType } from "./events"
 
@@ -20,7 +21,7 @@ let puzzleNumber = 0
 export function trackSessionStarted(): void {
   if (sessionStarted) return
   sessionStarted = true
-  trackWerdolEvent(WERDOL_EVENTS.sessionStarted.type, { platform: "web" })
+  trackWerdolEvent(WERDOL_EVENTS.sessionStarted.type, { platform: "web", generatorVersion: GENERATOR_VERSION })
 }
 
 /** "undecided" until the player has answered the welcome screen. */

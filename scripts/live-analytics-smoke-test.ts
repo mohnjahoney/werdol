@@ -10,9 +10,9 @@ const password = process.env.TRACKER_CURL_PASSWORD
 
 if (!password) throw new Error("Set TRACKER_CURL_PASSWORD before running the live analytics smoke test.")
 
-const puzzle = { puzzleId: `smoke-${crypto.randomUUID()}`, puzzleNumber: 1 }
+const puzzle = { puzzleId: `smoke-${crypto.randomUUID()}`, puzzleNumber: 1, puzzleDay: new Date().toISOString().slice(0, 10), dailyIndex: 0, attempt: 1 }
 const samples: WerdolEventDetails = {
-  [WERDOL_EVENTS.sessionStarted.type]: { platform: "web" },
+  [WERDOL_EVENTS.sessionStarted.type]: { platform: "web", generatorVersion: 1 },
   [WERDOL_EVENTS.puzzleStarted.type]: { ...puzzle, randomSeed: 13579, wordListMode: "easy", targetWord: "CRANE", minimumMoves: 13, wordsConsidered: 40 },
   [WERDOL_EVENTS.moveExecuted.type]: { ...puzzle, moveNumber: 1, firstSlot: 0, secondSlot: 1, interactionMode: "swap" },
   [WERDOL_EVENTS.puzzleReset.type]: { ...puzzle, movesTaken: 1 },
