@@ -350,7 +350,7 @@ export class MainScene extends Phaser.Scene {
     }
     const header = addWerdolHeader(this, undefined, "matched")
     this.headerTitle = header
-    if (this.dailyIndex !== undefined) header.showDailyProgress(this, loadDailyProgress(this.puzzleDay).results, this.dailyIndex)
+    if (this.dailyIndex !== undefined) header.showDailyProgress(this, loadDailyProgress(this.puzzleDay).results)
     const rendererTrigger = header.pieces.find((piece) => piece.character === "O")?.display
     const rendererTile = rendererTrigger instanceof Phaser.GameObjects.Container
       ? rendererTrigger.getAt(0)
