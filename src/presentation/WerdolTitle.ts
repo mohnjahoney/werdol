@@ -15,8 +15,6 @@ const TITLE_YELLOW = 0xc49f52
 const TITLE_PAPER = "#f3eedf"
 // Green for getting it first try, yellow for the second try, gray for finishing any other way.
 const PROGRESS_RESULT_COLORS: Record<Exclude<DailyResult, "unsolved">, number> = { first: 0x71845f, second: 0xc49f52, finished: 0xaaa396 }
-// Until its puzzle is solved the O is a neutral tile, so its colour never reads as a result.
-const PROGRESS_UNSOLVED_O_COLOR = 0xcfc8b8
 
 export type WerdolTitleDisplay = Phaser.GameObjects.Text | Phaser.GameObjects.Container
 
@@ -105,7 +103,8 @@ export class WerdolTitle {
       const result = results[pieceIndex] ?? "unsolved"
       const letter = piece.display
       if (!(letter instanceof Phaser.GameObjects.Text)) {
-        this.titleTile.setFillStyle(result === "unsolved" ? PROGRESS_UNSOLVED_O_COLOR : PROGRESS_RESULT_COLORS[result])
+        // Until its puzzle is solved the O keeps the title's own yellow.
+        this.titleTile.setFillStyle(result === "unsolved" ? TITLE_YELLOW : PROGRESS_RESULT_COLORS[result])
         this.resetTitleTile("matched")
         return
       }
