@@ -1,4 +1,4 @@
-import { DAILY_PUZZLE_COUNT } from "../core/dailyPuzzles"
+import { betterResult, DAILY_PUZZLE_COUNT, type DailyResult } from "../core/dailyPuzzles"
 
 const STORAGE_KEY = "werdol-daily-progress"
 
@@ -6,7 +6,8 @@ export interface DailyProgress {
   day: string
   /** The puzzle the player is on, counting from 0. Equal to the puzzle count once the day's set is finished. */
   position: number
-  solved: boolean[]
+  /** The best result earned on each puzzle today. */
+  results: DailyResult[]
   /** How many times each puzzle has been started today. */
   attempts: number[]
 }
@@ -15,7 +16,7 @@ export interface DailyProgress {
 let sessionProgress: DailyProgress | undefined
 
 function freshProgress(day: string): DailyProgress {
-  return { day, position: 0, solved: Array<boolean>(DAILY_PUZZLE_COUNT).fill(false), attempts: Array<number>(DAILY_PUZZLE_COUNT).fill(0) }
+  return { day, position: 0, results: Array<DailyResult>(DAILY_PUZZLE_COUNT).fill("unsolved"), attempts: Array<number>(DAILY_PUZZLE_COUNT).fill(0) }
 }
 
 /** Today's progress. Progress from any other day is discarded. */
@@ -38,10 +39,10 @@ export function recordAttempt(day: string, index: number): number {
   return progress.attempts[index]
 }
 
-/** Marks a puzzle solved and moves the player on to the next one. */
-export function recordSolved(day: string, index: number): DailyProgress {
+/** Records how a solve went, keeping the player's best result, and moves them on to the next puzzle. */
+export function recordSolved(day: string, index: number, result: DailyResult): DailyProgress {
   const progress = loadDailyProgress(day)
-  progress.solved[index] = true
+  progress.results[index] = betterResult(progress.results[index] ?? "unsolved", result)
   progress.position = Math.min(DAILY_PUZZLE_COUNT, index + 1)
   return save(progress)
 }
@@ -53,7 +54,7 @@ export function advancePast(day: string, index: number): DailyProgress {
   return save(progress)
 }
 
-/** Sends the player back to the day's first puzzle, keeping what they solved and their attempt counts. */
+/** Sends the player back to the day's first puzzle, keeping their results and attempt counts. */
 export function restartDay(day: string): DailyProgress {
   const progress = loadDailyProgress(day)
   progress.position = 0
@@ -71,7 +72,7 @@ function save(progress: DailyProgress): DailyProgress {
 }
 
 function copy(progress: DailyProgress): DailyProgress {
-  return { day: progress.day, position: progress.position, solved: [...progress.solved], attempts: [...progress.attempts] }
+  return { day: progress.day, position: progress.position, results: [...progress.results], attempts: [...progress.attempts] }
 }
 
 function isProgress(value: unknown): value is DailyProgress {
@@ -79,6 +80,6 @@ function isProgress(value: unknown): value is DailyProgress {
   const candidate = value as Partial<DailyProgress>
   return typeof candidate.day === "string"
     && Number.isInteger(candidate.position) && (candidate.position ?? -1) >= 0 && (candidate.position ?? 0) <= DAILY_PUZZLE_COUNT
-    && Array.isArray(candidate.solved) && candidate.solved.length === DAILY_PUZZLE_COUNT && candidate.solved.every((entry) => typeof entry === "boolean")
+    && Array.isArray(candidate.results) && candidate.results.length === DAILY_PUZZLE_COUNT && candidate.results.every((entry) => (["unsolved", "finished", "second", "first"] as unknown[]).includes(entry))
     && Array.isArray(candidate.attempts) && candidate.attempts.length === DAILY_PUZZLE_COUNT && candidate.attempts.every((entry) => Number.isInteger(entry) && entry >= 0)
 }

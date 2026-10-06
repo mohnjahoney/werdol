@@ -1,6 +1,7 @@
 import Phaser from "phaser"
 import { RENDER_SCALE } from "../style/rendering"
 import { HaloTileRenderer, type LetterTileState, type TileStateRenderer } from "./board/tileStateRenderers"
+import type { DailyResult } from "../core/dailyPuzzles"
 import { tileBorderColorForTileColor } from "./board/tileVisuals"
 
 export const WERDOL_TITLE_CENTER_X = 215
@@ -14,7 +15,8 @@ const TITLE_YELLOW = 0xc49f52
 const TITLE_PAPER = "#f3eedf"
 const PROGRESS_TILE_SIZE = 28
 const PROGRESS_TILE_RADIUS = 7
-const PROGRESS_SOLVED_COLOR = 0x71845f
+// Green for getting it first try, yellow for the second try, gray for finishing any other way.
+const PROGRESS_RESULT_COLORS: Record<Exclude<DailyResult, "unsolved">, number> = { first: 0x71845f, second: 0xc49f52, finished: 0xaaa396 }
 const PROGRESS_CURRENT_STROKE = 0x756d5e
 // W, E, R, D and L each stand for one of the day's puzzles; the O is the title's own tile.
 const PROGRESS_PIECES = [0, 1, 2, 3, 5] as const
@@ -95,20 +97,21 @@ export class WerdolTitle {
   }
 
   /**
-   * Shows the day's progress in the title: a letter sits in a filled tile once
-   * its puzzle is solved, and in an outlined one while its puzzle is in play.
+   * Shows the day's progress in the title: a letter sits in a tile coloured by
+   * how its puzzle went once solved, and in an outlined one while it is in play.
    */
-  showDailyProgress(scene: Phaser.Scene, solved: readonly boolean[], currentIndex?: number): void {
+  showDailyProgress(scene: Phaser.Scene, results: readonly DailyResult[], currentIndex?: number): void {
     this.progressTiles.forEach((tile) => tile.destroy())
     this.progressTiles = []
     PROGRESS_PIECES.forEach((pieceIndex, puzzleIndex) => {
       const letter = this.pieces[pieceIndex]?.display
       if (!(letter instanceof Phaser.GameObjects.Text)) return
-      const isSolved = solved[puzzleIndex] === true
+      const result = results[puzzleIndex] ?? "unsolved"
+      const isSolved = result !== "unsolved"
       letter.setColor(isSolved ? TITLE_PAPER : TITLE_INK)
       if (!isSolved && puzzleIndex !== currentIndex) return
       const position = this.slotPosition(pieceIndex)
-      const tile = scene.add.rectangle(position.x, position.y, PROGRESS_TILE_SIZE, PROGRESS_TILE_SIZE, PROGRESS_SOLVED_COLOR, isSolved ? 1 : 0)
+      const tile = scene.add.rectangle(position.x, position.y, PROGRESS_TILE_SIZE, PROGRESS_TILE_SIZE, result === "unsolved" ? 0 : PROGRESS_RESULT_COLORS[result], isSolved ? 1 : 0)
         .setRounded(PROGRESS_TILE_RADIUS)
       // The puzzle in play is outlined, including when it is a solved one being replayed.
       if (puzzleIndex === currentIndex) tile.setStrokeStyle(1.5, isSolved ? 0x211f1a : PROGRESS_CURRENT_STROKE)

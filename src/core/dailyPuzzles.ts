@@ -23,3 +23,28 @@ export function dailySeed(dayKey: string, index: number): number {
   const dayNumber = Math.floor(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1) / 86_400_000)
   return normalizeSeed(dayNumber * 10 + index)
 }
+
+/** A solve within this many moves of the goal counts as getting the puzzle. */
+export const GOT_IT_MARGIN = 3
+
+/**
+ * How a day's puzzle turned out, best first:
+ * "first" – got it on the first try; "second" – got it on the second try;
+ * "finished" – solved it some other way (more tries, or more moves).
+ */
+export type DailyResult = "unsolved" | "finished" | "second" | "first"
+
+const RESULT_RANK: Record<DailyResult, number> = { unsolved: 0, finished: 1, second: 2, first: 3 }
+
+export function gradeSolve(movesTaken: number, minimumMoves: number, attempt: number): DailyResult {
+  const gotIt = movesTaken <= minimumMoves + GOT_IT_MARGIN
+  if (gotIt && attempt === 1) return "first"
+  if (gotIt && attempt === 2) return "second"
+  return "finished"
+}
+
+/** A player keeps the best result they have earned on a puzzle. */
+export function betterResult(current: DailyResult, next: DailyResult): DailyResult {
+  return RESULT_RANK[next] > RESULT_RANK[current] ? next : current
+}
+

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DAILY_PUZZLE_COUNT, dailySeed, localDayKey } from "./dailyPuzzles"
+import { betterResult, DAILY_PUZZLE_COUNT, dailySeed, gradeSolve, localDayKey } from "./dailyPuzzles"
 import { createWerdolPuzzle } from "./puzzle"
 import { createSeededRandom } from "./seededRandom"
 
@@ -25,5 +25,20 @@ describe("daily puzzles", () => {
     const tomorrow = createWerdolPuzzle(createSeededRandom(dailySeed("2026-10-06", 0), 1), setup)
     expect(again).toEqual(first)
     expect(tomorrow.rows.map((row) => row.intendedGuess)).not.toEqual(first.rows.map((row) => row.intendedGuess))
+  })
+
+  it("grades a solve by how close it was to the goal and which try it was", () => {
+    expect(gradeSolve(13, 13, 1)).toBe("first")
+    expect(gradeSolve(16, 13, 1)).toBe("first")
+    expect(gradeSolve(17, 13, 1)).toBe("finished")
+    expect(gradeSolve(14, 13, 2)).toBe("second")
+    expect(gradeSolve(14, 13, 3)).toBe("finished")
+    expect(gradeSolve(20, 13, 2)).toBe("finished")
+  })
+
+  it("never downgrades a result", () => {
+    expect(betterResult("first", "finished")).toBe("first")
+    expect(betterResult("finished", "second")).toBe("second")
+    expect(betterResult("unsolved", "finished")).toBe("finished")
   })
 })

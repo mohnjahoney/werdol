@@ -11,7 +11,7 @@ import { cardWidthForPath, createReviewCardRects, DEFAULT_REVIEW_CARD_CONFIG, fo
 import { TimelineExplorer } from "../core/timelineExplorer"
 import { ANSWER_WORDS } from "../core/words"
 import { createSeededRandom, nextPuzzleSeed, normalizeSeed } from "../core/seededRandom"
-import { DAILY_PUZZLE_COUNT, dailySeed, localDayKey } from "../core/dailyPuzzles"
+import { DAILY_PUZZLE_COUNT, dailySeed, GOT_IT_MARGIN, gradeSolve, localDayKey } from "../core/dailyPuzzles"
 import { advancePast, loadDailyProgress, recordAttempt, recordSolved, restartDay } from "../storage/dailyProgress"
 import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
 import { loadPersonalBest, personalBestKey, savePersonalBest } from "../storage/personalBest"
@@ -66,7 +66,7 @@ const EXPLANATION_SHUFFLE_STAGGER = explanationTime(18) * 4
 const EXPLANATION_POST_SHUFFLE_PAUSE = 500
 const EXPLANATION_LETTER_REVEAL_DELAY = 300
 const EXPLANATION_LETTER_REVEAL_DURATION = 300
-const EXTRA_MOVES = 3
+const EXTRA_MOVES = GOT_IT_MARGIN
 const UI_ENTRANCE_DURATION = 260
 const UI_ENTRANCE_OFFSET_Y = 12
 const UI_ENTRANCE_EASE = "Sine.Out"
@@ -350,7 +350,7 @@ export class MainScene extends Phaser.Scene {
     }
     const header = addWerdolHeader(this, undefined, "matched")
     this.headerTitle = header
-    if (this.dailyIndex !== undefined) header.showDailyProgress(this, loadDailyProgress(this.puzzleDay).solved, this.dailyIndex)
+    if (this.dailyIndex !== undefined) header.showDailyProgress(this, loadDailyProgress(this.puzzleDay).results, this.dailyIndex)
     const rendererTrigger = header.pieces.find((piece) => piece.character === "O")?.display
     const rendererTile = rendererTrigger instanceof Phaser.GameObjects.Container
       ? rendererTrigger.getAt(0)
@@ -490,8 +490,8 @@ export class MainScene extends Phaser.Scene {
   private buildDailyDone(day: string): void {
     trackSessionStarted()
     const progress = loadDailyProgress(day)
-    const solvedCount = progress.solved.filter(Boolean).length
-    addWerdolHeader(this, undefined, "matched").showDailyProgress(this, progress.solved)
+    const solvedCount = progress.results.filter((result) => result !== "unsolved").length
+    addWerdolHeader(this, undefined, "matched").showDailyProgress(this, progress.results)
     const serif = "Georgia, Times New Roman, serif"
     const sans = "Arial, sans-serif"
     const heading = this.add.text(215, 250, "That's today's WERDOL", { color: COLORS.ink, fontFamily: serif, fontSize: "26px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5)
@@ -1509,6 +1509,8 @@ export class MainScene extends Phaser.Scene {
       movesTaken: this.movesTaken,
     })
     this.puzzleEndedTracked = false
+    // Starting again is a new try at the puzzle.
+    this.attempt = this.dailyIndex === undefined ? this.attempt + 1 : recordAttempt(this.puzzleDay, this.dailyIndex)
 
     this.tileSlots.forEach((visual, slotIndex) => {
       const center = this.slotCenter(slotIndex)
@@ -1553,7 +1555,7 @@ export class MainScene extends Phaser.Scene {
       // The bar keeps showing the best the player set out to beat; the new one appears on the next attempt.
       // Developer sessions can auto-solve, so their solves never count as a best.
       if (!this.isDeveloperUrl()) savePersonalBest(this.personalBestKey, this.movesTaken)
-      if (this.dailyIndex !== undefined) this.headerTitle?.showDailyProgress(this, recordSolved(this.puzzleDay, this.dailyIndex).solved)
+      if (this.dailyIndex !== undefined) this.headerTitle?.showDailyProgress(this, recordSolved(this.puzzleDay, this.dailyIndex, gradeSolve(this.movesTaken, this.minimumMoves, this.attempt)).results)
       this.headerTitle?.animateTitleTileState(this, "matched")
       this.time.delayedCall(SWAP_ANIMATION_DURATION, () => this.playCompletionCelebration(newlyCompletedRows, true))
       trackWerdolEvent(WERDOL_EVENTS.puzzleEnded.type, {
