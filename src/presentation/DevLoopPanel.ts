@@ -63,36 +63,95 @@ async function layOut(puzzleKey: string, expected: readonly string[], current: r
   const { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } = await import("d3-force")
   const letters = [...new Set(expected)].sort()
   const carried = lastLayout?.puzzleKey === puzzleKey ? lastLayout.positions : undefined
-  const nodes = letters.map((letter, index) => {
-    const angle = (index / letters.length) * Math.PI * 2 - Math.PI / 2
-    const start = carried?.get(letter) ?? { x: CENTER + Math.cos(angle) * RING_RADIUS, y: CENTER + Math.sin(angle) * RING_RADIUS }
-    return { id: letter, x: start.x, y: start.y }
-  })
-  const links = expected.flatMap((wanted, slot) => {
+  const pairs = expected.flatMap((wanted, slot) => {
     const held = current[slot]
     return held === undefined || held === wanted ? [] : [{ source: held, target: wanted }]
   })
-  const simulation = forceSimulation(nodes)
-    .force("link", forceLink<(typeof nodes)[number], { source: string; target: string }>(links).id((node) => node.id).distance(92).strength(0.3))
-    .force("charge", forceManyBody().strength(-460))
-    .force("collide", forceCollide(NODE_RADIUS + 12))
-    .force("center", forceCenter(CENTER, CENTER))
-    .force("x", forceX(CENTER).strength(0.04))
-    .force("y", forceY(CENTER).strength(0.04))
-    // A carried-over layout only needs a gentle nudge; a fresh one settles from scratch.
-    .alpha(carried ? 0.25 : 1)
-    .stop()
-  for (let tick = 0; tick < (carried ? 80 : 300); tick += 1) simulation.tick()
   const clamp = (value: number | undefined) => Math.max(MARGIN, Math.min(SIZE - MARGIN, value ?? CENTER))
-  const positions = new Map(nodes.map((node) => [node.id, { x: clamp(node.x), y: clamp(node.y) }]))
+
+  const settle = (order: readonly string[]): Map<string, Point> => {
+    const nodes = order.map((letter, index) => {
+      const angle = (index / order.length) * Math.PI * 2 - Math.PI / 2
+      const start = carried?.get(letter) ?? { x: CENTER + Math.cos(angle) * RING_RADIUS, y: CENTER + Math.sin(angle) * RING_RADIUS }
+      return { id: letter, x: start.x, y: start.y }
+    })
+    const simulation = forceSimulation(nodes)
+      .force("link", forceLink<(typeof nodes)[number], { source: string; target: string }>(pairs.map((pair) => ({ ...pair }))).id((node) => node.id).distance(92).strength(0.3))
+      .force("charge", forceManyBody().strength(-460))
+      .force("collide", forceCollide(NODE_RADIUS + 12))
+      .force("center", forceCenter(CENTER, CENTER))
+      .force("x", forceX(CENTER).strength(0.04))
+      .force("y", forceY(CENTER).strength(0.04))
+      // A carried-over layout only needs a gentle nudge; a fresh one settles from scratch.
+      .alpha(carried ? 0.25 : 1)
+      .stop()
+    for (let tick = 0; tick < (carried ? 80 : 300); tick += 1) simulation.tick()
+    return new Map(nodes.map((node) => [node.id, { x: clamp(node.x), y: clamp(node.y) }]))
+  }
+
+  let positions = settle(letters)
+  if (!carried) {
+    // The force layout does not try to avoid crossings, so a fresh graph is
+    // settled from several starting orders and the tidiest result is kept.
+    let seed = 20261006
+    const random = () => {
+      seed = (Math.imul(1664525, seed) + 1013904223) >>> 0
+      return seed / 4294967296
+    }
+    let bestScore = untidiness(positions, pairs)
+    for (let attempt = 0; attempt < 40 && bestScore > 0; attempt += 1) {
+      const order = [...letters]
+      for (let index = order.length - 1; index > 0; index -= 1) {
+        const other = Math.floor(random() * (index + 1))
+        const held = order[index]!
+        order[index] = order[other]!
+        order[other] = held
+      }
+      const candidate = settle(order)
+      const score = untidiness(candidate, pairs)
+      if (score < bestScore) {
+        bestScore = score
+        positions = candidate
+      }
+    }
+  }
   lastLayout = { puzzleKey, positions }
   return positions
+}
+
+function distanceToSegment(point: Point, from: Point, to: Point): number {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const lengthSquared = dx * dx + dy * dy || 1
+  const along = Math.max(0, Math.min(1, ((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSquared))
+  return Math.hypot(point.x - (from.x + dx * along), point.y - (from.y + dy * along))
+}
+
+/** How messy a layout is: arrows that cross, plus arrows that run over a letter they do not touch. */
+function untidiness(positions: ReadonlyMap<string, Point>, pairs: ReadonlyArray<{ source: string; target: string }>): number {
+  const segments = [...new Set(pairs.map((pair) => [pair.source, pair.target].sort().join("|")))].map((key) => key.split("|") as [string, string])
+  const side = (a: Point, b: Point, c: Point) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x))
+  let score = 0
+  segments.forEach(([a, b], index) => {
+    const from = positions.get(a)!
+    const to = positions.get(b)!
+    for (const [c, d] of segments.slice(index + 1)) {
+      if (c === a || c === b || d === a || d === b) continue
+      const other = positions.get(c)!
+      const otherEnd = positions.get(d)!
+      if (side(from, to, other) !== side(from, to, otherEnd) && side(other, otherEnd, from) !== side(other, otherEnd, to)) score += 1
+    }
+    positions.forEach((point, letter) => {
+      if (letter !== a && letter !== b && distanceToSegment(point, from, to) < NODE_RADIUS + 6) score += 2
+    })
+  })
+  return score
 }
 
 function drawGraph(expected: readonly string[], current: readonly string[], split: LoopSplit, position: ReadonlyMap<string, Point>): SVGElement {
   const svg = svgElement("svg", { viewBox: `0 0 ${SIZE} ${SIZE}`, role: "img", "aria-label": "Letter loops for the current board" })
   const defs = svgElement("defs", {})
-  const marker = svgElement("marker", { id: "werdol-loop-arrow", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" })
+  const marker = svgElement("marker", { id: "werdol-loop-arrow", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" })
   marker.append(svgElement("path", { d: "M2 1L8 5L2 9", fill: "none", stroke: "context-stroke", "stroke-width": 1.5, "stroke-linecap": "round", "stroke-linejoin": "round" }))
   defs.append(marker)
   svg.append(defs)
@@ -102,7 +161,17 @@ function drawGraph(expected: readonly string[], current: readonly string[], spli
   split.loops.forEach((loop) => loop.forEach((slot) => loopLengthBySlot.set(slot, loop.length)))
 
   const busy = new Set<string>()
-  const drawnBetween = new Map<string, number>()
+  // Arrows joining the same two letters are drawn as a fan around the straight
+  // line between them, with the two directions on opposite sides.
+  const fans = new Map<string, number[]>()
+  expected.forEach((wanted, slot) => {
+    const held = current[slot]
+    if (held === undefined || held === wanted) return
+    const key = [held, wanted].sort().join("|")
+    fans.set(key, [...(fans.get(key) ?? []), slot])
+  })
+  fans.forEach((slots) => slots.sort((first, second) => (current[first]! < expected[first]! ? 0 : 1) - (current[second]! < expected[second]! ? 0 : 1)))
+
   expected.forEach((wanted, slot) => {
     const held = current[slot]
     if (held === undefined || held === wanted) return
@@ -111,14 +180,24 @@ function drawGraph(expected: readonly string[], current: readonly string[], spli
     if (!from || !to) return
     busy.add(held)
     busy.add(wanted)
-    // Arrows between the same two letters fan out so each stays visible.
-    const sameDirection = drawnBetween.get(`${held}>${wanted}`) ?? 0
-    drawnBetween.set(`${held}>${wanted}`, sameDirection + 1)
-    const bend = 12 + sameDirection * 16
-    const dx = to.x - from.x
-    const dy = to.y - from.y
-    const length = Math.hypot(dx, dy) || 1
-    const control = { x: (from.x + to.x) / 2 - (dy / length) * bend, y: (from.y + to.y) / 2 + (dx / length) * bend }
+    const [low, high] = [held, wanted].sort() as [string, string]
+    const lowPoint = position.get(low)!
+    const highPoint = position.get(high)!
+    const span = Math.hypot(highPoint.x - lowPoint.x, highPoint.y - lowPoint.y) || 1
+    const normal = { x: -(highPoint.y - lowPoint.y) / span, y: (highPoint.x - lowPoint.x) / span }
+    const fan = fans.get(`${low}|${high}`) ?? [slot]
+    let bow = (fan.indexOf(slot) - (fan.length - 1) / 2) * 15
+    if (fan.length === 1) {
+      // A lone arrow is straight unless that would run it over another letter, in which case it bows away.
+      for (const [letter, point] of position) {
+        if (letter === held || letter === wanted || distanceToSegment(point, from, to) >= NODE_RADIUS + 6) continue
+        const pointSide = (point.x - lowPoint.x) * normal.x + (point.y - lowPoint.y) * normal.y
+        bow = pointSide > 0 ? -20 : 20
+        break
+      }
+    }
+    // A quadratic curve reaches half-way to its control point, so the control sits at twice the bow.
+    const control = { x: (from.x + to.x) / 2 + normal.x * bow * 2, y: (from.y + to.y) / 2 + normal.y * bow * 2 }
     const edgePoint = (node: { x: number; y: number }) => {
       const towards = Math.hypot(control.x - node.x, control.y - node.y) || 1
       return { x: node.x + ((control.x - node.x) / towards) * (NODE_RADIUS + 2), y: node.y + ((control.y - node.y) / towards) * (NODE_RADIUS + 2) }
@@ -130,7 +209,8 @@ function drawGraph(expected: readonly string[], current: readonly string[], spli
       d: `M${start.x.toFixed(1)} ${start.y.toFixed(1)} Q${control.x.toFixed(1)} ${control.y.toFixed(1)} ${end.x.toFixed(1)} ${end.y.toFixed(1)}`,
       fill: "none",
       stroke: style.color,
-      "stroke-width": 1.6,
+      "stroke-width": 1.4,
+      "stroke-linecap": "round",
       "stroke-dasharray": style.dash,
       "marker-end": "url(#werdol-loop-arrow)",
     })
