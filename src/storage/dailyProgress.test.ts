@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { DAILY_PUZZLE_COUNT } from "../core/dailyPuzzles"
-import { advancePast, loadDailyProgress, recordAttempt, recordSolved, restartDay } from "./dailyProgress"
+import { advancePast, clearDailyProgress, loadDailyProgress, recordAttempt, recordSolved, restartDay } from "./dailyProgress"
 
 function stubStorage(initial: Record<string, string> = {}): Map<string, string> {
   const values = new Map(Object.entries(initial))
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => void values.set(key, value),
+    removeItem: (key: string) => void values.delete(key),
   })
   return values
 }
@@ -46,6 +47,16 @@ describe("daily progress", () => {
     expect(loadDailyProgress("2026-01-05").position).toBe(0)
     stubStorage({ "werdol-daily-progress": "{broken" })
     expect(loadDailyProgress("2026-01-06").position).toBe(0)
+  })
+
+  it("can be cleared back to an unplayed day", () => {
+    const values = stubStorage()
+    recordAttempt("2026-01-08", 0)
+    recordSolved("2026-01-08", 0, "finished")
+    clearDailyProgress()
+    expect(values.has("werdol-daily-progress")).toBe(false)
+    expect(loadDailyProgress("2026-01-08")).toMatchObject({ position: 0, attempts: [0, 0, 0, 0, 0, 0] })
+    expect(loadDailyProgress("2026-01-08").results.every((result) => result === "unsolved")).toBe(true)
   })
 
   it("still advances within a visit when storage is unavailable", () => {

@@ -12,7 +12,7 @@ import { TimelineExplorer } from "../core/timelineExplorer"
 import { ANSWER_WORDS } from "../core/words"
 import { createSeededRandom, nextPuzzleSeed, normalizeSeed } from "../core/seededRandom"
 import { DAILY_PUZZLE_COUNT, dailySeed, GOT_IT_MARGIN, gradeSolve, localDayKey } from "../core/dailyPuzzles"
-import { advancePast, loadDailyProgress, recordAttempt, recordSolved, restartDay } from "../storage/dailyProgress"
+import { advancePast, clearDailyProgress, loadDailyProgress, recordAttempt, recordSolved, restartDay } from "../storage/dailyProgress"
 import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
 import { loadPersonalBest, personalBestKey, savePersonalBest } from "../storage/personalBest"
 import { analyticsChoice, getPlayerName, isAnalyticsOptedOut, MAX_PLAYER_NAME_LENGTH, setAnalyticsOptedOut, setPlayerName, startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
@@ -997,7 +997,14 @@ export class MainScene extends Phaser.Scene {
     const reviewButton = this.add.rectangle(220, y + 45, 95, 28, MainScene.INACTIVE_BUTTON_COLOR).setOrigin(0, 0).setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
     const reviewLabel = this.add.text(267, y + 59, "REVIEW", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
     reviewButton.on("pointerdown", () => this.enterReviewMode())
-    this.devTabContainers.solve.add([nextButton, nextIcon, resetButton, resetLabel, reviewButton, reviewLabel])
+    const resetTodayButton = this.add.rectangle(220, y + 81, 95, 28, MainScene.INACTIVE_BUTTON_COLOR).setOrigin(0, 0).setStrokeStyle(1, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
+    const resetTodayLabel = this.add.text(267, y + 95, "RESET TODAY", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
+    // Wipes the day's results and tries on this browser and starts again at puzzle 1.
+    resetTodayButton.on("pointerdown", () => {
+      clearDailyProgress()
+      this.restartWithSetup({})
+    })
+    this.devTabContainers.solve.add([nextButton, nextIcon, resetButton, resetLabel, reviewButton, reviewLabel, resetTodayButton, resetTodayLabel])
   }
 
   private buildTileRendererPanel(): void {

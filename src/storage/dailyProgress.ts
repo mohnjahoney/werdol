@@ -61,6 +61,16 @@ export function restartDay(day: string): DailyProgress {
   return save(progress)
 }
 
+/** Forgets the day's progress entirely, as if no puzzle had been played. A developer tool. */
+export function clearDailyProgress(): void {
+  sessionProgress = undefined
+  try {
+    globalThis.localStorage?.removeItem(STORAGE_KEY)
+  } catch {
+    // Nothing was stored, so there is nothing to clear.
+  }
+}
+
 function save(progress: DailyProgress): DailyProgress {
   sessionProgress = copy(progress)
   try {
