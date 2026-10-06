@@ -75,3 +75,35 @@ body {
   border-bottom-color: #71845f;
 }
 
+/* Developer-only side panel that draws the board as loops of letters. */
+.werdol-dev-loops {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  width: 340px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid #756d5e;
+  border-radius: 8px;
+  background: #faf6e9;
+  box-shadow: 0 6px 24px rgb(40 34 24 / 18%);
+  color: #211f1a;
+  font: 12px/1.45 Arial, sans-serif;
+}
+
+.werdol-dev-loops.collapsed { width: auto; }
+.werdol-dev-loops.collapsed .werdol-dev-loops-body { display: none; }
+.werdol-dev-loops-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; letter-spacing: 0.08em; text-transform: uppercase; }
+.werdol-dev-loops button { padding: 3px 8px; border: 1px solid #756d5e; border-radius: 4px; background: #c6bdae; color: #211f1a; font: bold 10px Arial, sans-serif; cursor: pointer; }
+.werdol-dev-loops p { margin: 8px 0 0; }
+.werdol-dev-loops-count { font-weight: bold; }
+.werdol-dev-loops-verdict { color: #756d5e; }
+.werdol-dev-loops-verdict.strong { color: #211f1a; font-weight: bold; }
+.werdol-dev-loops svg { display: block; width: 100%; height: auto; margin-top: 6px; }
+.werdol-dev-loops-legend { color: #756d5e; font-size: 11px; }
+.werdol-dev-loops-swatch { display: inline-block; width: 18px; margin-right: 4px; vertical-align: middle; }
+.werdol-dev-loops-list { margin: 8px 0 0; padding-left: 16px; }
+.werdol-dev-loops-list li { margin-top: 3px; }
+.werdol-dev-loops-hint { min-height: 22px; font-weight: bold; }

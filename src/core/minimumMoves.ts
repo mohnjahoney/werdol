@@ -98,6 +98,22 @@ export function countGreedyMoves(puzzle: WerdolPuzzle, startingTiles: readonly L
 
 /** Finds the true minimum for arbitrary swaps while treating equal letters as interchangeable. */
 export function countOptimalMoves(puzzle: WerdolPuzzle, startingTiles: readonly LetterTile[]): number {
+  return findBestLoops(puzzle, startingTiles).moves
+}
+
+export interface LoopSplit {
+  /** The fewest swaps that solve the board. */
+  moves: number
+  /**
+   * One best way to group the misplaced tiles into loops. Each loop lists
+   * slots in order: the letter on each slot belongs on the next, and the
+   * last one's belongs on the first. A loop of n slots takes n - 1 swaps.
+   */
+  loops: number[][]
+}
+
+/** Finds the fewest swaps and one grouping of the misplaced tiles into loops that achieves it. */
+export function findBestLoops(puzzle: WerdolPuzzle, startingTiles: readonly LetterTile[]): LoopSplit {
   const totalSlots = puzzle.rows.length * TILES_PER_ROW
   const expected = Array.from({ length: totalSlots }, (_value, slotIndex) => expectedCharacter(puzzle, slotIndex))
   const current = startingTiles.slice(0, totalSlots)
@@ -136,7 +152,8 @@ export function countOptimalMoves(puzzle: WerdolPuzzle, startingTiles: readonly 
     goalsByLetter.set(letter, goals)
   })
 
-  let bestMoves = totalSlots
+  let bestMoves = totalSlots + 1
+  let bestMapping: Array<number | undefined> = [...mapping]
   const groups = [...positionsByLetter.entries()]
 
   const visitGroup = (groupIndex: number): void => {
@@ -152,7 +169,10 @@ export function countOptimalMoves(puzzle: WerdolPuzzle, startingTiles: readonly 
           next = mapping[next]!
         }
       }
-      bestMoves = Math.min(bestMoves, totalSlots - cycles)
+      if (totalSlots - cycles < bestMoves) {
+        bestMoves = totalSlots - cycles
+        bestMapping = [...mapping]
+      }
       return
     }
 
@@ -176,7 +196,21 @@ export function countOptimalMoves(puzzle: WerdolPuzzle, startingTiles: readonly 
   }
 
   visitGroup(0)
-  return bestMoves
+
+  const loops: number[][] = []
+  const seen = Array<boolean>(totalSlots).fill(false)
+  for (let slotIndex = 0; slotIndex < totalSlots; slotIndex += 1) {
+    if (seen[slotIndex]) continue
+    const loop: number[] = []
+    let next = slotIndex
+    while (!seen[next]) {
+      seen[next] = true
+      loop.push(next)
+      next = bestMapping[next] ?? next
+    }
+    if (loop.length > 1) loops.push(loop)
+  }
+  return { moves: bestMoves, loops }
 }
 
 export function benchmarkSolvers(puzzle: WerdolPuzzle, startingTiles: readonly LetterTile[]): SolverBenchmark {

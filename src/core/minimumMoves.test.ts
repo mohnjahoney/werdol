@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { countGreedyMoves, countOptimalMoves, findNextSwap, findNextSwapRandomize } from "./minimumMoves"
+import { countGreedyMoves, countOptimalMoves, findBestLoops, findNextSwap, findNextSwapRandomize } from "./minimumMoves"
 import type { WerdolPuzzle } from "./puzzle"
 import type { LetterTile } from "./board"
 
@@ -52,6 +52,21 @@ describe("move counters", () => {
   it("leaves correct tiles alone when letters repeat", () => {
     const repeated: WerdolPuzzle = { target: "CRANE", rows: [{ intendedGuess: "EERIE", pattern: ["absent", "absent", "present", "absent", "correct"] }] }
     expect(countOptimalMoves(repeated, tiles("EEIRE"))).toBe(1)
+  })
+
+  it("groups the misplaced tiles of a real board into its best loops", () => {
+    const evoke: WerdolPuzzle = { target: "EVOKE", rows: ["OVARY", "EVICT", "CURVE", "DEFER"].map((word) => ({ intendedGuess: word, pattern: [] })) }
+    const wanted = "OVARYEVICTCURVEDEFER"
+    const start = tiles("UCECATEVIRRVDEORVEFY")
+    const split = findBestLoops(evoke, start)
+    expect(split.moves).toBe(13)
+    expect(split.loops.map((loop) => loop.length).sort()).toEqual([2, 2, 2, 2, 3, 4, 5])
+    expect(split.loops.flat().sort((first, second) => first - second)).toEqual(Array.from({ length: 20 }, (_value, index) => index))
+    // Within a loop, each slot's letter belongs on the next slot.
+    split.loops.forEach((loop) => loop.forEach((slot, index) => {
+      expect(start[slot]?.letter).toBe(wanted[loop[(index + 1) % loop.length]!])
+    }))
+    expect(findBestLoops(evoke, tiles(wanted))).toEqual({ moves: 0, loops: [] })
   })
 
   it("returns zero for an already solved board", () => {

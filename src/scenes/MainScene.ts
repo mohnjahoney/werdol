@@ -28,6 +28,7 @@ import { createCircularArc, mirrorCircularArc, pointOnCircularArc } from "../pre
 import { CircularArcVisual } from "../presentation/circularArcVisual"
 import { PuzzleWalkthrough } from "../presentation/PuzzleWalkthrough"
 import { LetterVisual } from "../presentation/LetterVisual"
+import { hideDevLoopPanel, updateDevLoopPanel } from "../presentation/DevLoopPanel"
 import { GameBoard, type GameBoardSwapEvent, type GameBoardTileVisual } from "../presentation/GameBoard"
 
 const COLORS = {
@@ -245,6 +246,7 @@ export class MainScene extends Phaser.Scene {
   create(): void {
     let data = pendingSceneData ?? {}
     pendingSceneData = undefined
+    hideDevLoopPanel()
     configureLogicalCamera(this)
     // Nothing is generated or logged until the player has chosen how to play.
     if (data.showPlayerGate || analyticsChoice() === "undecided") {
@@ -391,6 +393,13 @@ export class MainScene extends Phaser.Scene {
       this.boardWarmupPending = false
       this.animateBoardWarmup()
     }
+    if (!this.openingAnimationActive) this.refreshDevLoopPanel()
+  }
+
+  /** In developer mode, redraws the side panel that shows the board as loops of letters. */
+  private refreshDevLoopPanel(afterMove = false): void {
+    if (!this.isDeveloperUrl() || this.puzzleCreationFailed || this.gameBoard === undefined) return
+    updateDevLoopPanel(this.puzzle, tilesFromOccupancy(this.occupancy, this.letters), afterMove)
   }
 
   private hasSeenOpening(): boolean {
@@ -843,6 +852,7 @@ export class MainScene extends Phaser.Scene {
     this.playerPath = [{ tiles: shuffledTiles, deltaCorrect: 0, correctCount: countCorrectTiles(this.puzzle, shuffledTiles) }]
     this.movesTaken = 0
     this.openingShuffleOccupancy = undefined
+    this.refreshDevLoopPanel()
   }
 
   private releaseOpeningLetterVisuals(occupancy: readonly number[]): void {
@@ -1532,6 +1542,7 @@ export class MainScene extends Phaser.Scene {
     this.gameBoard?.clearSelection()
     this.updateMoveInfo()
     this.gameBoard?.updateTileMatchRendering()
+    this.refreshDevLoopPanel()
   }
 
   private showAlreadyCompleteWord(rowIndex: number): void {
@@ -1546,6 +1557,7 @@ export class MainScene extends Phaser.Scene {
     this.playerPath.push({ tiles: nextTiles.map((tile) => ({ ...tile })), deltaCorrect: nextCorrectCount - previousCorrectCount, correctCount: nextCorrectCount, swap: { firstSlot, secondSlot } })
     this.setOccupancy(nextOccupancy)
     this.movesTaken += 1
+    this.refreshDevLoopPanel(true)
     trackWerdolEvent(WERDOL_EVENTS.moveExecuted.type, {
       ...this.puzzleEventFields(),
       moveNumber: this.movesTaken,
