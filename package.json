@@ -16,9 +16,11 @@
     "build": "npm run typecheck && vite build"
   },
   "dependencies": {
+    "d3-force": "^3.0.0",
     "phaser": "4.2.1"
   },
   "devDependencies": {
+    "@types/d3-force": "^3.0.10",
     "typescript": "5.8.3",
     "vite": "7.3.6",
     "vitest": "3.2.7"

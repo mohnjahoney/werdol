@@ -101,7 +101,8 @@ body {
 .werdol-dev-loops-count { font-weight: bold; }
 .werdol-dev-loops-verdict { color: #756d5e; }
 .werdol-dev-loops-verdict.strong { color: #211f1a; font-weight: bold; }
-.werdol-dev-loops svg { display: block; width: 100%; height: auto; margin-top: 6px; }
+.werdol-dev-loops-graph { aspect-ratio: 1; margin-top: 6px; }
+.werdol-dev-loops svg { display: block; width: 100%; height: auto; }
 .werdol-dev-loops-legend { color: #756d5e; font-size: 11px; }
 .werdol-dev-loops-swatch { display: inline-block; width: 18px; margin-right: 4px; vertical-align: middle; }
 .werdol-dev-loops-list { margin: 8px 0 0; padding-left: 16px; }

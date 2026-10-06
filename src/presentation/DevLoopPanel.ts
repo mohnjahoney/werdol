@@ -12,6 +12,7 @@ const SVG_NS = "http://www.w3.org/2000/svg"
 const SIZE = 320
 const CENTER = SIZE / 2
 const RING_RADIUS = 118
+const MARGIN = 22
 const NODE_RADIUS = 15
 const LOOP_STYLES = [
   { minLength: 5, color: "#D4537E", dash: "10 4", label: "loop of 5+" },
@@ -25,8 +26,13 @@ interface PanelState {
   remaining: number
 }
 
+type Point = { x: number; y: number }
+
 let root: HTMLElement | undefined
 let previous: PanelState | undefined
+// Where each letter sat last time, so the graph adjusts between moves instead of rearranging.
+let lastLayout: { puzzleKey: string; positions: Map<string, Point> } | undefined
+let renderCount = 0
 
 const slotName = (slot: number): string => `row ${Math.floor(slot / TILES_PER_ROW) + 1} col ${(slot % TILES_PER_ROW) + 1}`
 const styleFor = (length: number) => LOOP_STYLES.find((style) => length >= style.minLength) ?? LOOP_STYLES[LOOP_STYLES.length - 1]!
@@ -48,7 +54,42 @@ function svgElement(tag: string, attributes: Record<string, string | number>): S
   return node
 }
 
-function drawGraph(expected: readonly string[], current: readonly string[], split: LoopSplit): SVGElement {
+/**
+ * Places the letters with a force layout: arrows act as springs and letters
+ * repel, so letters that share tiles settle near each other. The library is
+ * loaded on demand, since only developer mode uses it.
+ */
+async function layOut(puzzleKey: string, expected: readonly string[], current: readonly string[]): Promise<Map<string, Point>> {
+  const { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } = await import("d3-force")
+  const letters = [...new Set(expected)].sort()
+  const carried = lastLayout?.puzzleKey === puzzleKey ? lastLayout.positions : undefined
+  const nodes = letters.map((letter, index) => {
+    const angle = (index / letters.length) * Math.PI * 2 - Math.PI / 2
+    const start = carried?.get(letter) ?? { x: CENTER + Math.cos(angle) * RING_RADIUS, y: CENTER + Math.sin(angle) * RING_RADIUS }
+    return { id: letter, x: start.x, y: start.y }
+  })
+  const links = expected.flatMap((wanted, slot) => {
+    const held = current[slot]
+    return held === undefined || held === wanted ? [] : [{ source: held, target: wanted }]
+  })
+  const simulation = forceSimulation(nodes)
+    .force("link", forceLink<(typeof nodes)[number], { source: string; target: string }>(links).id((node) => node.id).distance(92).strength(0.3))
+    .force("charge", forceManyBody().strength(-460))
+    .force("collide", forceCollide(NODE_RADIUS + 12))
+    .force("center", forceCenter(CENTER, CENTER))
+    .force("x", forceX(CENTER).strength(0.04))
+    .force("y", forceY(CENTER).strength(0.04))
+    // A carried-over layout only needs a gentle nudge; a fresh one settles from scratch.
+    .alpha(carried ? 0.25 : 1)
+    .stop()
+  for (let tick = 0; tick < (carried ? 80 : 300); tick += 1) simulation.tick()
+  const clamp = (value: number | undefined) => Math.max(MARGIN, Math.min(SIZE - MARGIN, value ?? CENTER))
+  const positions = new Map(nodes.map((node) => [node.id, { x: clamp(node.x), y: clamp(node.y) }]))
+  lastLayout = { puzzleKey, positions }
+  return positions
+}
+
+function drawGraph(expected: readonly string[], current: readonly string[], split: LoopSplit, position: ReadonlyMap<string, Point>): SVGElement {
   const svg = svgElement("svg", { viewBox: `0 0 ${SIZE} ${SIZE}`, role: "img", "aria-label": "Letter loops for the current board" })
   const defs = svgElement("defs", {})
   const marker = svgElement("marker", { id: "werdol-loop-arrow", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" })
@@ -56,12 +97,7 @@ function drawGraph(expected: readonly string[], current: readonly string[], spli
   defs.append(marker)
   svg.append(defs)
 
-  // Every letter of the puzzle keeps its place on the ring for the whole game.
   const letters = [...new Set(expected)].sort()
-  const position = new Map(letters.map((letter, index) => {
-    const angle = (index / letters.length) * Math.PI * 2 - Math.PI / 2
-    return [letter, { x: CENTER + Math.cos(angle) * RING_RADIUS, y: CENTER + Math.sin(angle) * RING_RADIUS }] as const
-  }))
   const loopLengthBySlot = new Map<number, number>()
   split.loops.forEach((loop) => loop.forEach((slot) => loopLengthBySlot.set(slot, loop.length)))
 
@@ -182,7 +218,14 @@ export function updateDevLoopPanel(puzzle: WerdolPuzzle, tiles: readonly LetterT
   const body = element("div", "werdol-dev-loops-body")
   body.append(element("p", "werdol-dev-loops-count", `${misplaced} misplaced − ${split.loops.length} loops = ${split.moves} moves to finish`))
   body.append(element("p", afterMove ? "werdol-dev-loops-verdict strong" : "werdol-dev-loops-verdict", verdict))
-  body.append(drawGraph(expected, current, split))
+  const graph = element("div", "werdol-dev-loops-graph")
+  body.append(graph)
+  // The layout arrives a moment later; a newer update makes an older one stale.
+  renderCount += 1
+  const thisRender = renderCount
+  void layOut(puzzleKey, expected, current).then((positions) => {
+    if (thisRender === renderCount) graph.replaceChildren(drawGraph(expected, current, split, positions))
+  })
 
   const legend = element("p", "werdol-dev-loops-legend")
   LOOP_STYLES.slice().reverse().forEach((style) => {
@@ -214,4 +257,5 @@ export function hideDevLoopPanel(): void {
   root?.remove()
   root = undefined
   previous = undefined
+  renderCount += 1
 }
