@@ -18,7 +18,7 @@ import { loadPersonalBest, personalBestKey, savePersonalBest } from "../storage/
 import { analyticsChoice, getPlayerName, isAnalyticsOptedOut, MAX_PLAYER_NAME_LENGTH, setAnalyticsOptedOut, setPlayerName, startPuzzleAnalytics, trackWerdolEvent, trackSessionStarted } from "../analytics/tracker"
 import { WERDOL_EVENTS } from "../analytics/events"
 import { OpeningAnimation } from "../presentation/OpeningAnimation"
-import { BOARD_LAYOUT, boardSlotCenter } from "../presentation/board/boardLayout"
+import { BOARD_LAYOUT, boardSlotCenter, STATUS_RULE_Y } from "../presentation/board/boardLayout"
 import { createTileRendererForMode, renderTileState, type TileRendererMode, type TileStateRenderer } from "../presentation/board/tileStateRenderers"
 import { createTileLetter, REVIEW_PRESENTATION, TILE_COLORS, tileColor } from "../presentation/board/tileVisuals"
 import { celebrateCompletedPuzzle, celebrateCompletedRow } from "../presentation/celebrations"
@@ -88,6 +88,9 @@ type ReviewPathKind = "player" | "reference"
 type DevTab = "setup" | "solve" | "review"
 
 const ICON_KEYS = ["replace", "eye", "square", "layers-3", "rotate-ccw", "arrow-right"] as const
+// Top-right corner, level with the right end of the header rule.
+const HELP_BUTTON_X = 393
+const HELP_BUTTON_Y = 32
 const OPENING_SEEN_KEY = "werdol-opening-seen"
 
 let pendingSceneData: SceneData | undefined
@@ -142,7 +145,6 @@ export class MainScene extends Phaser.Scene {
   private goalCountText?: Phaser.GameObjects.Text
   private outOfMovesOverlay?: Phaser.GameObjects.Container
   private finishOverlay?: Phaser.GameObjects.Container
-  private howToPlayOverlay!: Phaser.GameObjects.Container
   private walkthrough?: PuzzleWalkthrough
   private requireTargetLetterInEachRow = false
   private requireGreenTileInEachRow = false
@@ -385,7 +387,6 @@ export class MainScene extends Phaser.Scene {
       wordsConsidered: this.puzzle.wordsConsidered ?? 0,
     })
     this.buildMoveInfo()
-    this.buildNewPuzzleButton()
     this.buildHowToPlay()
     this.buildDevPanel()
     this.buildTileRendererPanel()
@@ -519,74 +520,31 @@ export class MainScene extends Phaser.Scene {
     this.tweens.add({ targets: objects, alpha: 1, duration: UI_ENTRANCE_DURATION, ease: UI_ENTRANCE_EASE })
   }
 
-  private buildNewPuzzleButton(): void {
-    const button = this.add.rectangle(117, 626, 196, 42, COLORS.newPuzzleButton)
-      .setOrigin(0, 0)
-      .setRounded(8)
-      .setStrokeStyle(1.5, MainScene.ACTIVE_BUTTON_COLOR)
-      .setInteractive({ useHandCursor: true })
-    const label = this.add.text(215, 647, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", letterSpacing: 0.8, resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
-    button.on("pointerover", () => {
-      button.setFillStyle(COLORS.newPuzzleButtonHover)
-      label.setColor(COLORS.newPuzzleButtonHoverText)
-    })
-    button.on("pointerout", () => {
-      button.setFillStyle(COLORS.newPuzzleButton)
-      label.setColor(COLORS.newPuzzleButtonText)
-    })
-    button.on("pointerdown", () => {
-      this.restartWithSetup(this.nextPuzzleSetup())
-    })
-    this.queueUiEntrance([button, label])
-  }
-
   private buildHowToPlay(): void {
-    const infoButton = this.add.rectangle(366, 549, 24, 24, COLORS.infoButton)
-      .setOrigin(0.5)
-      .setRounded(7)
-      .setStrokeStyle(1.5, COLORS.infoButtonHover)
+    const infoButton = this.add.circle(HELP_BUTTON_X, HELP_BUTTON_Y, 9, 0xf3eedf, 0)
+      .setStrokeStyle(2.5, MainScene.BUTTON_STROKE_COLOR)
       .setInteractive({ useHandCursor: true })
-    const infoLabel = this.add.text(366, 549, "?", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
+    const infoLabel = this.add.text(HELP_BUTTON_X, HELP_BUTTON_Y, "?", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", fontStyle: "bold", resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(1)
     infoButton.on("pointerover", () => {
-      infoButton.setFillStyle(COLORS.infoButtonHover)
-      infoLabel.setColor(COLORS.buttonHoverText)
-    })
-    infoButton.on("pointerout", () => {
-      infoButton.setFillStyle(COLORS.infoButton)
+      infoButton.setStrokeStyle(2.5, 0x211f1a)
       infoLabel.setColor(COLORS.ink)
     })
+    infoButton.on("pointerout", () => {
+      infoButton.setStrokeStyle(2.5, MainScene.BUTTON_STROKE_COLOR)
+      infoLabel.setColor(COLORS.muted)
+    })
 
-    this.howToPlayOverlay = this.add.container(0, 0).setDepth(30).setVisible(false)
-    const backdrop = this.add.rectangle(0, 0, 430, 760, 0x211f1a, 0.18).setOrigin(0, 0).setInteractive()
-    const panel = this.add.rectangle(25, 150, 380, 550, 0xf3eedf).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR)
-    const title = this.add.text(50, 172, "HOW TO PLAY", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "13px", fontStyle: "bold", letterSpacing: 1, resolution: RENDER_SCALE })
-    const instructions = this.add.text(50, 206, "WERDOL begins where WORDLE ends...\n\nImagine that a WORDLE game has been played and completed after 5 guesses. We see the resulting gameboard here.\n\nEach tile is colored with green, yellow, and gray meaning 'correct', 'misplaced', and 'unnecessary'.\n\nHowever...the letters in the first four rows are mixed up, while keeping the colors in place.\n\nCHALLENGE: recreate those 4 word guesses in as few moves as possible.\n\nTap two letters to swap. Tiles change when they receive the right letter.", { color: COLORS.ink, fontFamily: "Georgia, Times New Roman, serif", fontSize: "15px", lineSpacing: 5, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
-    const walkthroughButton = this.add.rectangle(50, 590, 330, 36, COLORS.primaryButton).setOrigin(0, 0).setStrokeStyle(1.5, MainScene.BUTTON_STROKE_COLOR).setInteractive({ useHandCursor: true })
-    const walkthroughLabel = this.add.text(215, 608, "WATCH A DEMO", { color: COLORS.primaryButtonText, fontFamily: "Arial, sans-serif", fontSize: "11px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setOrigin(0.5)
-    walkthroughButton.on("pointerover", () => {
-      walkthroughButton.setFillStyle(COLORS.primaryButtonHover)
-      walkthroughLabel.setColor(COLORS.primaryButtonHoverText)
-    })
-    walkthroughButton.on("pointerout", () => {
-      walkthroughButton.setFillStyle(COLORS.primaryButton)
-      walkthroughLabel.setColor(COLORS.primaryButtonText)
-    })
-    walkthroughButton.on("pointerdown", () => {
-      this.howToPlayOverlay.setVisible(false)
-      this.startWalkthrough()
-    })
-    const loggingNotice = this.add.text(50, 640, "", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", lineSpacing: 2, wordWrap: { width: 330 }, resolution: RENDER_SCALE })
-    const loggingToggle = this.add.text(50, 668, "", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.6, resolution: RENDER_SCALE }).setPadding(0, 6).setInteractive({ useHandCursor: true })
-    const playerName = getPlayerName()
-    loggingNotice.setText(isAnalyticsOptedOut()
-      ? "Playing privately. Only the time you started is sent."
-      : `Playing ${playerName ? `as ${playerName}` : "without a WERDOL-name"}. Your moves are logged to help make WERDOL better.`)
-    loggingToggle.setText("CHANGE")
-    loggingToggle.on("pointerdown", () => this.restartWithSetup({ ...this.currentPuzzleSetup(), showPlayerGate: true }))
-    this.howToPlayOverlay.add([backdrop, panel, title, instructions, walkthroughButton, walkthroughLabel, loggingNotice, loggingToggle])
-    infoButton.on("pointerdown", () => this.howToPlayOverlay.setVisible(!this.howToPlayOverlay.visible))
-    backdrop.on("pointerdown", () => this.howToPlayOverlay.setVisible(false))
+    infoButton.on("pointerdown", () => this.startWalkthrough())
     this.queueUiEntrance([infoButton, infoLabel])
+
+    const playerName = getPlayerName()
+    const status = isAnalyticsOptedOut() ? "playing privately" : playerName ? `playing as ${playerName}` : "playing without a name"
+    const playerStatus = this.add.text(55, 720, `${status} \u00b7 change`, { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(0, 0.5)
+    const playerStatusHitArea = this.add.zone(55, 720, playerStatus.width + 16, 32).setOrigin(0, 0.5).setInteractive({ useHandCursor: true })
+    playerStatusHitArea.on("pointerover", () => playerStatus.setColor(COLORS.ink))
+    playerStatusHitArea.on("pointerout", () => playerStatus.setColor(COLORS.muted))
+    playerStatusHitArea.on("pointerdown", () => this.restartWithSetup({ ...this.currentPuzzleSetup(), showPlayerGate: true }))
+    this.queueUiEntrance([playerStatus])
 
     const sayHello = this.add.text(375, 720, "say hello", { color: COLORS.muted, fontFamily: "Georgia, Times New Roman, serif", fontSize: "12px", resolution: RENDER_SCALE }).setOrigin(1, 0.5)
     const sayHelloUnderline = this.add.rectangle(375, 730, sayHello.width, 1, COLORS.mutedNumeric, 0.5).setOrigin(1, 0.5)
@@ -635,8 +593,8 @@ export class MainScene extends Phaser.Scene {
   private buildMoveInfo(): void {
     const ruleLeft = 47
     const ruleWidth = 336
-    const ruleY = 512
-    const statusTop = 539
+    const ruleY = STATUS_RULE_Y
+    const statusTop = STATUS_RULE_Y + 27
     const barLeft = 82
     const barWidth = 266
     const barY = statusTop + 37
@@ -1614,7 +1572,7 @@ export class MainScene extends Phaser.Scene {
     const restartButton = this.add.rectangle(70, 410, 140, 42, COLORS.infoButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, COLORS.infoButtonHover).setInteractive({ useHandCursor: true })
     const restartLabel = this.add.text(140, 431, "START AGAIN", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
     const newPuzzleButton = this.add.rectangle(220, 410, 140, 42, COLORS.newPuzzleButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.ACTIVE_BUTTON_COLOR).setInteractive({ useHandCursor: true })
-    const newPuzzleLabel = this.add.text(290, 431, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const newPuzzleLabel = this.add.text(290, 431, "NEXT PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
     keepTryingButton.on("pointerover", () => {
       keepTryingButton.setFillStyle(COLORS.button)
     })
@@ -1676,7 +1634,7 @@ export class MainScene extends Phaser.Scene {
     const retryButton = this.add.rectangle(50, 415, 150, 38, COLORS.infoButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, COLORS.infoButtonHover).setInteractive({ useHandCursor: true })
     const retryLabel = this.add.text(125, 434, "BEAT YOUR SCORE", { color: COLORS.ink, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.4, resolution: RENDER_SCALE }).setOrigin(0.5)
     const newPuzzleButton = this.add.rectangle(230, 415, 150, 38, COLORS.newPuzzleButton).setOrigin(0, 0).setRounded(8).setStrokeStyle(1.5, MainScene.ACTIVE_BUTTON_COLOR).setInteractive({ useHandCursor: true })
-    const newPuzzleLabel = this.add.text(305, 434, "NEW PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
+    const newPuzzleLabel = this.add.text(305, 434, "NEXT PUZZLE", { color: COLORS.newPuzzleButtonText, fontFamily: "Arial, sans-serif", fontSize: "10px", fontStyle: "bold", letterSpacing: 0.5, resolution: RENDER_SCALE }).setOrigin(0.5)
     retryButton.on("pointerover", () => {
       retryButton.setFillStyle(COLORS.infoButtonHover)
       retryLabel.setColor(COLORS.buttonHoverText)

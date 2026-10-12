@@ -3,9 +3,10 @@ import { RENDER_SCALE } from "../style/rendering"
 import { HaloTileRenderer, type LetterTileState, type TileStateRenderer } from "./board/tileStateRenderers"
 import type { DailyResult } from "../core/dailyPuzzles"
 import { tileBorderColorForTileColor } from "./board/tileVisuals"
+import { HEADER_RULE_Y } from "./board/boardLayout"
 
 export const WERDOL_TITLE_CENTER_X = 215
-export const WERDOL_TITLE_HEADER_Y = 58
+export const WERDOL_TITLE_HEADER_Y = HEADER_RULE_Y - 47
 export const WERDOL_TITLE_SLOT_SPACING = 38
 export const WERDOL_TITLE_TILE_SIZE = 32
 export const WERDOL_TITLE_TILE_RADIUS = 8
