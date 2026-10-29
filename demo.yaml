@@ -10,8 +10,8 @@ base: http://localhost:5199
 serve:
   cmd: npm run dev -- --port 5199 --strictPort
   url: http://localhost:5199/
-viewport: { width: 1280, height: 720 } # the game is capped at 430x760 CSS px, so scale 2 keeps it sharp
-scale: 2
+viewport: { width: 430, height: 760 } # the game's own size (it's capped at 430x760 CSS px), so the video is only the app
+scale: 2 # video is 860x1520
 pause_after: 0.2
 seed: 3
 
