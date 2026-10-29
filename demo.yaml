@@ -1,0 +1,84 @@
+# Demo script for Werdol. Record it with demo-recorder (https://github.com/<you>/demo-recorder):
+#   node ~/Documents/code/demo-recorder/record.mjs demo.yaml
+# Targets written "js:__demo.…" use the helpers in src/demo.ts (the game draws on a canvas, so it has no
+# selectors for tiles): slot(n) is tile n counted across the 5x5 board, row(n) a whole row, and
+# logical(x, y, w, h) a rect in the game's 430x760 layout.
+# Seed 0 is HARPY (RHYME MATEY HAVEN CHUMP). The swaps below come from `npm run demo:solution -- 0`:
+# two wasted swaps, then the solve (15 moves, which still beats the game's "out of moves" limit).
+name: werdol
+base: http://localhost:5199
+serve:
+  cmd: npm run dev -- --port 5199 --strictPort
+  url: http://localhost:5199/
+viewport: { width: 1280, height: 720 } # the game is capped at 430x760 CSS px, so scale 2 keeps it sharp
+scale: 2
+pause_after: 0.2
+seed: 3
+
+steps:
+  # Welcome screen
+  - goto: "/?demo=1&seed=0"
+  - wait: ".werdol-name-input"
+  - pause: 0.6
+  - start:
+  - screenshot: welcome
+  - click: "js:__demo.logical(90, 274, 250, 32)" # name field
+  - type: Ada
+  - pause: 0.4
+  - click: "js:__demo.logical(70, 372, 290, 46)" # PLAY
+
+  # Opening animation, then point out the goal: the bottom row is the word to build
+  - pause: 6
+  - screenshot: board
+  - highlight: "js:__demo.row(4)"
+    duration: 2.5
+    style: dim
+  - zoom: "js:__demo.logical(40, 160, 350, 370)"
+    level: 1.6
+
+  # Two wasted swaps
+  - { click: "js:__demo.slot(0)" }
+  - { click: "js:__demo.slot(10)" }
+  - { click: "js:__demo.slot(4)" }
+  - { click: "js:__demo.slot(5)" }
+
+  # The solve
+  - { click: "js:__demo.slot(0)" }
+  - { click: "js:__demo.slot(8)" }
+  - { click: "js:__demo.slot(5)" }
+  - { click: "js:__demo.slot(6)" }
+  - { click: "js:__demo.slot(9)" }
+  - { click: "js:__demo.slot(15)" }
+  - { click: "js:__demo.slot(12)" }
+  - { click: "js:__demo.slot(18)" }
+  - { click: "js:__demo.slot(17)" }
+  - { click: "js:__demo.slot(19)" }
+  - { click: "js:__demo.slot(1)" }
+  - { click: "js:__demo.slot(2)" }
+  - { click: "js:__demo.slot(2)" }
+  - { click: "js:__demo.slot(3)" }
+  - { click: "js:__demo.slot(3)" }
+  - { click: "js:__demo.slot(16)" }
+  - { click: "js:__demo.slot(4)" }
+  - { click: "js:__demo.slot(11)" }
+  - { click: "js:__demo.slot(11)" }
+  - { click: "js:__demo.slot(16)" }
+  - { click: "js:__demo.slot(7)" }
+  - { click: "js:__demo.slot(10)" }
+  - { click: "js:__demo.slot(10)" }
+  - { click: "js:__demo.slot(13)" }
+  - { click: "js:__demo.slot(13)" }
+  - { click: "js:__demo.slot(14)" }
+
+  # Celebration, then the SOLVED panel (it appears ~5s after the last swap)
+  - pause: 5.5
+  - screenshot: solved
+  - pause: 1.5
+
+  # Start a new game, then fade out
+  - click: "js:__demo.logical(230, 415, 150, 38)" # NEXT PUZZLE
+  - pause: 2.5
+  - screenshot: next-puzzle
+  - zoom: out
+  - pause: 1
+  - fade_out: 1.5

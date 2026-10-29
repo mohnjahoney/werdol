@@ -4,3 +4,4 @@ dist/
 DOCS/
 docs/
 .DS_Store
+out/
