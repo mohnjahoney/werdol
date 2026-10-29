@@ -7,6 +7,7 @@
     "dev": "vite",
     "test": "vitest run",
     "test:watch": "vitest",
+    "demo:solution": "esbuild scripts/demo-solution.ts --bundle --platform=node --format=esm --log-level=error | node --input-type=module - ",
     "analytics:smoke": "node --experimental-strip-types scripts/live-analytics-smoke-test.ts",
     "analytics:publish": "node --experimental-strip-types scripts/publish-analytics-schema.ts",
     "experiment:ngram": "node --experimental-strip-types scripts/query-ngram.ts",
