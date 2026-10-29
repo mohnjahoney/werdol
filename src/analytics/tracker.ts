@@ -1,4 +1,5 @@
 import { GENERATOR_VERSION } from "../core/dailyPuzzles"
+import { demoMode } from "../demo"
 import { createEventEnvelope } from "./protocol"
 import { WERDOL_EVENTS, type WerdolCommonFields, type WerdolEventDetails, type WerdolEventType } from "./events"
 
@@ -63,6 +64,7 @@ export function startPuzzleAnalytics(): { puzzleId: string; puzzleNumber: number
 }
 
 export function trackWerdolEvent<Event extends WerdolEventType>(event: Event, details: WerdolEventDetails[Event]): void {
+  if (demoMode) return
   const optedOut = choice === "private"
   if (optedOut && event !== WERDOL_EVENTS.sessionStarted.type) return
   const common: WerdolCommonFields = {

@@ -1,7 +1,10 @@
 import Phaser from "phaser"
 import { MainScene } from "./scenes/MainScene"
 import { RENDER_SIZE } from "./style/rendering"
+import { installDemoHelpers } from "./demo"
 import "./styles.css"
+
+installDemoHelpers()
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,

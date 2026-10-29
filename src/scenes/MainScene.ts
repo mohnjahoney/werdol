@@ -11,6 +11,7 @@ import { cardWidthForPath, createReviewCardRects, DEFAULT_REVIEW_CARD_CONFIG, fo
 import { TimelineExplorer } from "../core/timelineExplorer"
 import { ANSWER_WORDS } from "../core/words"
 import { createSeededRandom, nextPuzzleSeed, normalizeSeed } from "../core/seededRandom"
+import { demoSeed } from "../demo"
 import { DAILY_PUZZLE_COUNT, dailySeed, GOT_IT_MARGIN, gradeSolve, localDayKey } from "../core/dailyPuzzles"
 import { advancePast, clearDailyProgress, loadDailyProgress, recordAttempt, recordSolved, restartDay } from "../storage/dailyProgress"
 import { configureLogicalCamera, RENDER_SCALE } from "../style/rendering"
@@ -256,7 +257,9 @@ export class MainScene extends Phaser.Scene {
       return
     }
     // Without an explicit seed, play the next puzzle of today's shared list.
-    if (data.seed === undefined) {
+    if (data.seed === undefined && demoSeed() !== undefined) {
+      data = { ...data, seed: demoSeed() }
+    } else if (data.seed === undefined) {
       const day = localDayKey()
       const progress = loadDailyProgress(day)
       if (progress.position >= DAILY_PUZZLE_COUNT) {
