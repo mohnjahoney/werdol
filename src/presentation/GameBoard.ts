@@ -49,6 +49,13 @@ const TRAVEL_SHADOW_BLUR = 8
 const TRAVEL_SHADOW_COLOR = "rgba(33, 31, 26, 0.5)"
 const TILE_EVALUATION_FLIP_DURATION = 145
 
+type LetterSelectionState = "idle" | "buffered" | "selected"
+
+interface BufferedSelection {
+  visual: GameBoardTileVisual
+  mode: GameBoardInteractionMode
+}
+
 /** Owns the shared Phaser objects that make up a playable or scripted board. */
 export class GameBoard {
   readonly tileSlots: GameBoardTileVisual[] = []
@@ -59,10 +66,13 @@ export class GameBoard {
   private occupancy: number[]
   private selectedSlot: number | undefined
   private renderedSelectedSlot: number | undefined
+  private bufferedSelection: BufferedSelection | undefined
   private swapping = false
   private destroyed = false
   private readonly delayedCalls = new Set<Phaser.Time.TimerEvent>()
   private readonly swapArcs = new Set<CircularArcVisual>()
+  private readonly selectionTweensByText = new Map<Phaser.GameObjects.Text, Phaser.Tweens.Tween[]>()
+  private readonly selectionShadowBlurByText = new Map<Phaser.GameObjects.Text, number>()
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -244,16 +254,24 @@ export class GameBoard {
       this.scene.tweens.killTweensOf(tile)
     })
     this.tileSlots.forEach(({ text }) => this.scene.tweens.killTweensOf(text))
+    this.selectionTweensByText.forEach((tweens) => tweens.forEach((tween) => tween.stop()))
+    this.selectionTweensByText.clear()
+    this.selectionShadowBlurByText.clear()
     this.tileRenderer.destroy()
   }
 
   clearSelection(): void {
+    this.clearBufferedSelection()
     this.selectedSlot = undefined
     this.updateSelection()
   }
 
   selectTile(slotIndex: number, mode: GameBoardInteractionMode): void {
-    if (this.destroyed || this.swapping || this.callbacks.isInteractionBlocked()) return
+    if (this.destroyed || this.callbacks.isInteractionBlocked()) return
+    if (this.swapping) {
+      this.bufferTileSelection(slotIndex, mode)
+      return
+    }
     const rowIndex = Math.floor(slotIndex / 5)
     if (this.isRowCorrect(rowIndex)) {
       this.selectedSlot = undefined
@@ -282,7 +300,7 @@ export class GameBoard {
     if (first === undefined || second === undefined) return
     this.swapping = true
     this.updateSelection(false)
-    this.animateLetterSelection(second.text, true)
+    this.animateLetterSelection(second.text, "selected")
     this.schedule(SWAP_SELECTION_DELAY, () => this.swapSlots(firstSlot, slotIndex))
   }
 
@@ -378,7 +396,7 @@ export class GameBoard {
       if (this.selectedSlot !== undefined) changedSlots.add(this.selectedSlot)
       changedSlots.forEach((slotIndex) => {
         const visual = this.tileSlots[slotIndex]
-        if (visual) this.animateLetterSelection(visual.text, slotIndex === this.selectedSlot)
+        if (visual) this.animateLetterSelection(visual.text, slotIndex === this.selectedSlot ? "selected" : "idle")
       })
     }
     this.renderedSelectedSlot = this.selectedSlot
@@ -423,6 +441,7 @@ export class GameBoard {
           if (remaining === 0) {
             this.swapping = false
             this.callbacks.onSwapSettled()
+            this.promoteBufferedSelection()
           }
         }
         this.animateLetterToRest(first.text, finish)
@@ -431,25 +450,73 @@ export class GameBoard {
     })
   }
 
-  private animateLetterSelection(text: Phaser.GameObjects.Text, selected: boolean): void {
+  private bufferTileSelection(slotIndex: number, mode: GameBoardInteractionMode): void {
+    const visual = this.tileSlots[slotIndex]
+    if (!visual) return
+    if (this.bufferedSelection?.visual === visual) {
+      this.bufferedSelection = { visual, mode }
+      return
+    }
+    this.clearBufferedSelection()
+    this.bufferedSelection = { visual, mode }
+    this.animateLetterSelection(visual.text, "buffered")
+  }
+
+  private clearBufferedSelection(): void {
+    const buffered = this.bufferedSelection
+    this.bufferedSelection = undefined
+    if (buffered) this.animateLetterSelection(buffered.visual.text, "idle")
+  }
+
+  private promoteBufferedSelection(): void {
+    const buffered = this.bufferedSelection
+    this.bufferedSelection = undefined
+    if (!buffered) return
+    const slotIndex = this.tileSlots.indexOf(buffered.visual)
+    if (slotIndex < 0 || this.callbacks.isInteractionBlocked()) {
+      this.animateLetterSelection(buffered.visual.text, "idle")
+      return
+    }
+    this.selectTile(slotIndex, buffered.mode)
+    if (this.selectedSlot !== slotIndex) this.animateLetterSelection(buffered.visual.text, "idle")
+  }
+
+  private stopLetterSelectionTweens(text: Phaser.GameObjects.Text): void {
+    this.selectionTweensByText.get(text)?.forEach((tween) => tween.stop())
+    this.selectionTweensByText.delete(text)
+  }
+
+  private animateLetterSelection(text: Phaser.GameObjects.Text, state: LetterSelectionState): void {
     if (this.destroyed) return
-    this.scene.tweens.add({ targets: text, angle: selected ? 30 : 0, duration: TRAVEL_SHADOW_DURATION, ease: "Sine.easeInOut" })
-    this.scene.tweens.addCounter({
-      from: selected ? 0 : TRAVEL_SHADOW_BLUR,
-      to: selected ? TRAVEL_SHADOW_BLUR : 0,
+    this.stopLetterSelectionTweens(text)
+    const targetAngle = state === "selected" ? 30 : state === "buffered" ? -30 : 0
+    const targetShadowBlur = state === "idle" ? 0 : TRAVEL_SHADOW_BLUR
+    const currentShadowBlur = this.selectionShadowBlurByText.get(text) ?? 0
+    const angleTween = this.scene.tweens.add({ targets: text, angle: targetAngle, duration: TRAVEL_SHADOW_DURATION, ease: "Sine.easeInOut" })
+    const shadowTween = this.scene.tweens.addCounter({
+      from: currentShadowBlur,
+      to: targetShadowBlur,
       duration: TRAVEL_SHADOW_DURATION,
       ease: "Sine.easeInOut",
       onUpdate: (tween) => {
-        if (!this.destroyed) text.setShadow(1, 1, TRAVEL_SHADOW_COLOR, tween.getValue() ?? 0, true, true)
+        if (this.destroyed) return
+        const blur = tween.getValue() ?? targetShadowBlur
+        this.selectionShadowBlurByText.set(text, blur)
+        text.setShadow(1, 1, TRAVEL_SHADOW_COLOR, blur, true, true)
       },
       onComplete: () => {
-        if (!this.destroyed && !selected) text.setShadow(0, 0, TRAVEL_SHADOW_COLOR, 0, false, false)
+        if (this.destroyed) return
+        this.selectionShadowBlurByText.set(text, targetShadowBlur)
+        if (state === "idle") text.setShadow(0, 0, TRAVEL_SHADOW_COLOR, 0, false, false)
       },
     })
+    this.selectionTweensByText.set(text, [angleTween, shadowTween])
   }
 
   private animateLetterToRest(text: Phaser.GameObjects.Text, onComplete: () => void): void {
     if (this.destroyed) return
+    this.stopLetterSelectionTweens(text)
+    this.selectionShadowBlurByText.set(text, TRAVEL_SHADOW_BLUR)
     this.scene.tweens.add({
       targets: text,
       angle: 0,
@@ -465,10 +532,15 @@ export class GameBoard {
       duration: TRAVEL_SHADOW_DURATION,
       ease: "Sine.easeInOut",
       onUpdate: (tween) => {
-        if (!this.destroyed) text.setShadow(1, 1, TRAVEL_SHADOW_COLOR, tween.getValue() ?? 0, true, true)
+        if (this.destroyed) return
+        const blur = tween.getValue() ?? 0
+        this.selectionShadowBlurByText.set(text, blur)
+        text.setShadow(1, 1, TRAVEL_SHADOW_COLOR, blur, true, true)
       },
       onComplete: () => {
-        if (!this.destroyed) text.setShadow(0, 0, TRAVEL_SHADOW_COLOR, 0, false, false)
+        if (this.destroyed) return
+        this.selectionShadowBlurByText.set(text, 0)
+        text.setShadow(0, 0, TRAVEL_SHADOW_COLOR, 0, false, false)
       },
     })
   }
