@@ -14,7 +14,7 @@
     "experiment:label-familiarity": "node --experimental-strip-types scripts/label-word-familiarity.ts",
     "experiment:ngram-plot": "python3 scripts/plot-ngram-histogram.py docs/allowed-words-ngram.json docs/allowed-words-familiarity-labels.json docs/allowed-words-familiarity-histogram.png",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build"
+    "build": "pnpm run typecheck && vite build"
   },
   "dependencies": {
     "d3-force": "^3.0.0",

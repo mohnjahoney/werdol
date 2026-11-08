@@ -21,27 +21,33 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.1
+          run_install: false
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: npm test
+        run: pnpm test
 
       - name: Build
-        run: npm run build
+        run: pnpm build
 
       # The receiver rejects WERDOL events that do not fit the published schema,
       # so it must hold this build's schema before the build goes live.
       - name: Publish analytics schema
         env:
           TRACKER_CURL_PASSWORD: ${{ secrets.TRACKER_CURL_PASSWORD }}
-        run: npm run analytics:publish
+        run: pnpm run analytics:publish
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
